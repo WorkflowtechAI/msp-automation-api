@@ -7,7 +7,6 @@
 ad-test-query.ps1
 ad-user-query.ps1
 local-admin-report.ps1
-Mail-Zapper.ps1
 update-sysmon.ps1
 upgrade-to-win11-assistant.ps1
 index-page.htm
