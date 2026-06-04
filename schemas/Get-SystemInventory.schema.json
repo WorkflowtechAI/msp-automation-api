@@ -1,0 +1,324 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://msp-automation.schemas.io/system-inventory.json",
+  "title": "System Inventory",
+  "description": "Input and output schema for system inventory operations",
+  "type": "object",
+  "definitions": {
+    "InventoryRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9-]+$"
+          },
+          "minItems": 1,
+          "description": "Array of computer names to inventory"
+        },
+        "IncludeDiskSpace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include detailed disk space information"
+        },
+        "IncludeNetworkInfo": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include detailed network configuration"
+        },
+        "IncludeInstalledSoftware": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include installed software inventory"
+        },
+        "TimeoutSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600,
+          "default": 300,
+          "description": "Operation timeout in seconds"
+        },
+        "EnableIdempotency": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable idempotency checking"
+        },
+        "StateStorePath": {
+          "type": "string",
+          "default": "C:\\AutomationState",
+          "description": "Path for idempotency state storage"
+        }
+      }
+    },
+    "DiskInfo": {
+      "type": "object",
+      "properties": {
+        "Drive": {
+          "type": "string",
+          "pattern": "^[A-Z]:$"
+        },
+        "SizeGB": {
+          "type": "number",
+          "minimum": 0
+        },
+        "FreeGB": {
+          "type": "number",
+          "minimum": 0
+        },
+        "UsedPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "NetworkInfo": {
+      "type": "object",
+      "properties": {
+        "Description": {
+          "type": "string"
+        },
+        "IPAddress": {
+          "type": "string"
+        },
+        "MACAddress": {
+          "type": "string",
+          "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+        },
+        "DNS": {
+          "type": "string"
+        },
+        "DHCPEnabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SoftwareInfo": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string"
+        },
+        "Version": {
+          "type": "string"
+        },
+        "Vendor": {
+          "type": "string"
+        },
+        "InstallDate": {
+          "type": "string"
+        }
+      }
+    },
+    "InventoryData": {
+      "type": "object",
+      "required": ["Hostname", "Manufacturer", "Model", "SerialNumber", "CPU", "RAM_GB", "OS", "ScanTime"],
+      "properties": {
+        "Hostname": {
+          "type": "string"
+        },
+        "Manufacturer": {
+          "type": "string"
+        },
+        "Model": {
+          "type": "string"
+        },
+        "SerialNumber": {
+          "type": "string"
+        },
+        "CPU": {
+          "type": "string"
+        },
+        "CPUCores": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "CPULogical": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "RAM_GB": {
+          "type": "number",
+          "minimum": 0
+        },
+        "OS": {
+          "type": "string"
+        },
+        "OSBuild": {
+          "type": "string"
+        },
+        "OSVersion": {
+          "type": "string"
+        },
+        "LastBoot": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "UptimeDays": {
+          "type": "number",
+          "minimum": 0
+        },
+        "Domain": {
+          "type": "string"
+        },
+        "CurrentUser": {
+          "type": "string"
+        },
+        "BIOSVersion": {
+          "type": "string"
+        },
+        "Disks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DiskInfo"
+          }
+        },
+        "Network": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NetworkInfo"
+          }
+        },
+        "Software": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SoftwareInfo"
+          }
+        },
+        "ScanTime": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "InventoryError": {
+      "type": "object",
+      "properties": {
+        "Computer": {
+          "type": "string"
+        },
+        "Error": {
+          "type": "string"
+        },
+        "ErrorType": {
+          "type": "string"
+        }
+      }
+    },
+    "InventoryResponse": {
+      "type": "object",
+      "required": ["TotalComputers", "Successful", "Failed", "Inventory", "Errors"],
+      "properties": {
+        "TotalComputers": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "Successful": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Inventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InventoryData"
+          }
+        },
+        "Errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InventoryError"
+          }
+        }
+      }
+    },
+    "HealthCheckData": {
+      "type": "object",
+      "required": ["ComputerName", "Online", "CheckTime"],
+      "properties": {
+        "ComputerName": {
+          "type": "string"
+        },
+        "Online": {
+          "type": "boolean"
+        },
+        "CPUPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "MemoryPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "DiskPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "UptimeDays": {
+          "type": "number",
+          "minimum": 0
+        },
+        "StoppedServices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "OverallStatus": {
+          "type": "string",
+          "enum": ["Healthy", "Warning", "Critical"]
+        },
+        "CheckTime": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ApiResponse": {
+      "type": "object",
+      "required": ["Success", "Message", "Timestamp"],
+      "properties": {
+        "Success": {
+          "type": "boolean"
+        },
+        "Message": {
+          "type": "string"
+        },
+        "Data": {
+          "type": "object"
+        },
+        "ErrorCode": {
+          "type": "string"
+        },
+        "Metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "Timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/definitions/InventoryRequest"
+    },
+    {
+      "$ref": "#/definitions/InventoryResponse"
+    },
+    {
+      "$ref": "#/definitions/ApiResponse"
+    }
+  ]
+}

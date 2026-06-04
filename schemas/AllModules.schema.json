@@ -1,0 +1,374 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://msp-automation.schemas.io/all-modules.json",
+  "title": "MSP Automation All Modules Schema",
+  "description": "Comprehensive JSON Schema for all MSP automation modules",
+  "definitions": {
+    "DiskSpaceAlertRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "AlertThresholdPercent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 90
+        },
+        "IncludeAllDrives": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "SoftwareInventoryRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "IncludeUpdates": {
+          "type": "boolean",
+          "default": false
+        },
+        "MaxResults": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 100
+        }
+      }
+    },
+    "WindowsUpdateStatusRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "IncludePendingUpdates": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "FailedLoginsRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "HoursBack": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 720,
+          "default": 24
+        },
+        "MaxResults": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 50
+        }
+      }
+    },
+    "LocalAdminAuditRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "IncludeDomainAdmins": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "OpenPortsRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "IncludeUDP": {
+          "type": "boolean",
+          "default": false
+        },
+        "WellKnownOnly": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "BitLockerStatusRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "Remediate": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "ServiceHealthRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "CriticalServices": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["wuauserv", "WinDefend", "EventLog", "RpcSs", "Dnscache", "Dhcp", "LanmanWorkstation", "W32Time", "MpsSvc", "BITS", "CryptSvc"]
+        },
+        "RestartStopped": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "StaleProfilesRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "DaysInactive": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 730,
+          "default": 90
+        }
+      }
+    },
+    "DiskCleanupRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "CleanupTempFiles": {
+          "type": "boolean",
+          "default": false
+        },
+        "CleanupRecycleBin": {
+          "type": "boolean",
+          "default": false
+        },
+        "CleanupWindowsUpdateCache": {
+          "type": "boolean",
+          "default": false
+        },
+        "MinFreeSpaceGB": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 0
+        }
+      }
+    },
+    "DNSReportRequest": {
+      "type": "object",
+      "required": ["ComputerName"],
+      "properties": {
+        "ComputerName": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "IncludeDNSSuffixes": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "PingSweepRequest": {
+      "type": "object",
+      "required": ["NetworkRange"],
+      "properties": {
+        "NetworkRange": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+        },
+        "TimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 1
+        },
+        "MaxConcurrent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50
+        }
+      }
+    },
+    "NetworkConnectivityRequest": {
+      "type": "object",
+      "required": ["ComputerName", "TargetEndpoints"],
+      "properties": {
+        "ComputerName": {
+          "type": "string"
+        },
+        "TargetEndpoints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "TestPorts": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "default": []
+        },
+        "PortTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 2
+        }
+      }
+    },
+    "M365LicenseAuditRequest": {
+      "type": "object",
+      "properties": {
+        "ExportCSV": {
+          "type": "string"
+        },
+        "EnabledOnly": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "MFAStatusReportRequest": {
+      "type": "object",
+      "properties": {
+        "EnabledOnly": {
+          "type": "boolean",
+          "default": false
+        },
+        "ExportCSV": {
+          "type": "string"
+        }
+      }
+    },
+    "SharedMailboxAccessRequest": {
+      "type": "object",
+      "properties": {
+        "ExportCSV": {
+          "type": "string"
+        }
+      }
+    },
+    "InactiveUsersRequest": {
+      "type": "object",
+      "properties": {
+        "DaysInactive": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 730,
+          "default": 90
+        },
+        "SearchBase": {
+          "type": "string"
+        }
+      }
+    },
+    "PasswordExpiryRequest": {
+      "type": "object",
+      "properties": {
+        "DaysToExpiry": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "default": 30
+        },
+        "SearchBase": {
+          "type": "string"
+        }
+      }
+    },
+    "UserOffboardRequest": {
+      "type": "object",
+      "required": ["Username"],
+      "properties": {
+        "Username": {
+          "type": "string"
+        },
+        "RemoveHomeDirectory": {
+          "type": "boolean",
+          "default": false
+        },
+        "RemoveGroupMemberships": {
+          "type": "boolean",
+          "default": false
+        },
+        "DisableOnly": {
+          "type": "boolean",
+          "default": false
+        },
+        "ArchivePath": {
+          "type": "string"
+        }
+      }
+    },
+    "StandardApiResponse": {
+      "type": "object",
+      "required": ["Success", "Message", "Timestamp"],
+      "properties": {
+        "Success": {
+          "type": "boolean"
+        },
+        "Message": {
+          "type": "string"
+        },
+        "Data": {
+          "type": "object"
+        },
+        "ErrorCode": {
+          "type": "string"
+        },
+        "Metadata": {
+          "type": "object"
+        },
+        "Timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

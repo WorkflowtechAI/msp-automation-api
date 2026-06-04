@@ -1,0 +1,1132 @@
+openapi: 3.0.3
+info:
+  title: MSP Automation API
+  description: API-ready PowerShell automation modules for MSP operations
+  version: 2.0.0
+  contact:
+    name: Eudai Gestalt Integrations
+    email: dgb@workflowtech.ai
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+  - url: https://automation.yourdomain.com/api/v1
+    description: Production server
+
+tags:
+  - name: Endpoint
+    description: System endpoint management
+  - name: UserManagement
+    description: Active Directory user operations
+  - name: Security
+    description: Security and compliance operations
+  - name: Maintenance
+    description: System maintenance operations
+  - name: Network
+    description: Network operations and diagnostics
+  - name: M365
+    description: Microsoft 365 operations
+
+paths:
+  /endpoint/inventory:
+    post:
+      tags:
+        - Endpoint
+      summary: Get system inventory
+      description: Retrieve detailed hardware and software inventory for one or more computers
+      operationId: getSystemInventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryRequest'
+      responses:
+        '200':
+          description: Inventory completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /endpoint/health:
+    post:
+      tags:
+        - Endpoint
+      summary: Get system health status
+      description: Quick health check for monitoring dashboards
+      operationId: getSystemHealth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ComputerName
+              properties:
+                ComputerName:
+                  type: string
+                  description: Computer name to check
+      responses:
+        '200':
+          description: Health check completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+        '404':
+          description: Computer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /user/create:
+    post:
+      tags:
+        - UserManagement
+      summary: Create new AD user
+      description: Create a new Active Directory user with standardized settings and rollback support
+      operationId: createADUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '200':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUserResponse'
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /user/rollback:
+    post:
+      tags:
+        - UserManagement
+      summary: Rollback user creation
+      description: Rollback AD user creation by removing user, home directory, and group memberships
+      operationId: rollbackUserCreation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackRequest'
+      responses:
+        '200':
+          description: Rollback completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackResponse'
+        '404':
+          description: User or rollback state not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /endpoint/disk-space:
+    post:
+      tags:
+        - Endpoint
+      summary: Get disk space alerts
+      description: Get disk space information and alert on threshold violations
+      operationId: getDiskSpaceAlert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiskSpaceAlertRequest'
+      responses:
+        '200':
+          description: Disk space check completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /endpoint/software:
+    post:
+      tags:
+        - Endpoint
+      summary: Get installed software
+      description: Get installed software inventory for one or more computers
+      operationId: getInstalledSoftware
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SoftwareInventoryRequest'
+      responses:
+        '200':
+          description: Software inventory completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /endpoint/windows-updates:
+    post:
+      tags:
+        - Endpoint
+      summary: Get Windows update status
+      description: Get Windows Update status for one or more computers
+      operationId: getWindowsUpdateStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WindowsUpdateStatusRequest'
+      responses:
+        '200':
+          description: Windows Update status completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /security/failed-logins:
+    post:
+      tags:
+        - Security
+      summary: Get failed login attempts
+      description: Get failed login attempts for security auditing
+      operationId: getFailedLogins
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedLoginsRequest'
+      responses:
+        '200':
+          description: Failed login audit completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /security/local-admin:
+    post:
+      tags:
+        - Security
+      summary: Get local admin audit
+      description: Get local administrator group membership for security auditing
+      operationId: getLocalAdminAudit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalAdminAuditRequest'
+      responses:
+        '200':
+          description: Local admin audit completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /security/open-ports:
+    post:
+      tags:
+        - Security
+      summary: Get open ports
+      description: Get open network ports for security auditing
+      operationId: getOpenPorts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenPortsRequest'
+      responses:
+        '200':
+          description: Open port scan completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /security/bitlocker:
+    post:
+      tags:
+        - Security
+      summary: Get BitLocker status
+      description: Enhanced BitLocker status with compliance checking
+      operationId: getBitLockerStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BitLockerStatusRequest'
+      responses:
+        '200':
+          description: BitLocker status completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /maintenance/service-health:
+    post:
+      tags:
+        - Maintenance
+      summary: Get service health report
+      description: Get service health report for critical services
+      operationId: getServiceHealthReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceHealthRequest'
+      responses:
+        '200':
+          description: Service health check completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /maintenance/stale-profiles:
+    post:
+      tags:
+        - Maintenance
+      summary: Get stale user profiles
+      description: Get stale user profiles for cleanup
+      operationId: getStaleUserProfiles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaleProfilesRequest'
+      responses:
+        '200':
+          description: Stale profile scan completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /maintenance/disk-cleanup:
+    post:
+      tags:
+        - Maintenance
+      summary: Invoke disk cleanup
+      description: Invoke disk cleanup operations
+      operationId: invokeDiskCleanup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiskCleanupRequest'
+      responses:
+        '200':
+          description: Disk cleanup completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /network/dns-report:
+    post:
+      tags:
+        - Network
+      summary: Get DNS report
+      description: Get DNS configuration and report for one or more computers
+      operationId: getDNSReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DNSReportRequest'
+      responses:
+        '200':
+          description: DNS report completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /network/ping-sweep:
+    post:
+      tags:
+        - Network
+      summary: Invoke ping sweep
+      description: Perform ping sweep across a network range
+      operationId: invokePingSweep
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PingSweepRequest'
+      responses:
+        '200':
+          description: Ping sweep completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /network/connectivity:
+    post:
+      tags:
+        - Network
+      summary: Test network connectivity
+      description: Test network connectivity to multiple endpoints
+      operationId: testNetworkConnectivity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkConnectivityRequest'
+      responses:
+        '200':
+          description: Network connectivity test completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /m365/license-audit:
+    post:
+      tags:
+        - M365
+      summary: Get M365 license audit
+      description: Get M365 license audit and utilization report
+      operationId: getM365LicenseAudit
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/M365LicenseAuditRequest'
+      responses:
+        '200':
+          description: M365 license audit completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /m365/mfa-status:
+    post:
+      tags:
+        - M365
+      summary: Get MFA status report
+      description: Get MFA status report for M365 users
+      operationId: getMFAStatusReport
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAStatusReportRequest'
+      responses:
+        '200':
+          description: MFA status report completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /m365/shared-mailbox:
+    post:
+      tags:
+        - M365
+      summary: Get shared mailbox access
+      description: Get shared mailbox access report
+      operationId: getSharedMailboxAccess
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SharedMailboxAccessRequest'
+      responses:
+        '200':
+          description: Shared mailbox access report completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /user/inactive:
+    post:
+      tags:
+        - UserManagement
+      summary: Get inactive users
+      description: Get inactive users for cleanup or review
+      operationId: getInactiveUsers
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InactiveUsersRequest'
+      responses:
+        '200':
+          description: Inactive user scan completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /user/password-expiry:
+    post:
+      tags:
+        - UserManagement
+      summary: Get password expiry report
+      description: Get password expiry report for users
+      operationId: getPasswordExpiryReport
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordExpiryRequest'
+      responses:
+        '200':
+          description: Password expiry report completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+  /user/offboard:
+    post:
+      tags:
+        - UserManagement
+      summary: Remove AD user offboard
+      description: Remove AD user with comprehensive offboarding process
+      operationId: removeADUserOffboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserOffboardRequest'
+      responses:
+        '200':
+          description: User offboarding completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponse'
+
+components:
+  schemas:
+    InventoryRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+          description: Array of computer names to inventory
+        IncludeDiskSpace:
+          type: boolean
+          default: false
+        IncludeNetworkInfo:
+          type: boolean
+          default: false
+        IncludeInstalledSoftware:
+          type: boolean
+          default: false
+        TimeoutSeconds:
+          type: integer
+          minimum: 30
+          maximum: 3600
+          default: 300
+        EnableIdempotency:
+          type: boolean
+          default: false
+
+    InventoryResponse:
+      type: object
+      properties:
+        Success:
+          type: boolean
+        Message:
+          type: string
+        Data:
+          type: object
+          properties:
+            TotalComputers:
+              type: integer
+            Successful:
+              type: integer
+            Failed:
+              type: integer
+            Inventory:
+              type: array
+              items:
+                $ref: '#/components/schemas/InventoryData'
+            Errors:
+              type: array
+              items:
+                $ref: '#/components/schemas/InventoryError'
+
+    InventoryData:
+      type: object
+      properties:
+        Hostname:
+          type: string
+        Manufacturer:
+          type: string
+        Model:
+          type: string
+        SerialNumber:
+          type: string
+        CPU:
+          type: string
+        CPUCores:
+          type: integer
+        RAM_GB:
+          type: number
+        OS:
+          type: string
+        ScanTime:
+          type: string
+          format: date-time
+
+    InventoryError:
+      type: object
+      properties:
+        Computer:
+          type: string
+        Error:
+          type: string
+        ErrorType:
+          type: string
+
+    HealthCheckResponse:
+      type: object
+      properties:
+        Success:
+          type: boolean
+        Message:
+          type: string
+        Data:
+          type: object
+          properties:
+            ComputerName:
+              type: string
+            Online:
+              type: boolean
+            CPUPercent:
+              type: number
+            MemoryPercent:
+              type: number
+            DiskPercent:
+              type: number
+            UptimeDays:
+              type: number
+            StoppedServices:
+              type: array
+              items:
+                type: string
+            OverallStatus:
+              type: string
+              enum: [Healthy, Warning, Critical]
+            CheckTime:
+              type: string
+              format: date-time
+
+    CreateUserRequest:
+      type: object
+      required:
+        - FirstName
+        - LastName
+        - Department
+        - Title
+      properties:
+        FirstName:
+          type: string
+        LastName:
+          type: string
+        Username:
+          type: string
+        Department:
+          type: string
+        Title:
+          type: string
+        TemplateUser:
+          type: string
+        OU:
+          type: string
+        Password:
+          type: string
+        EnableRollback:
+          type: boolean
+          default: false
+
+    CreateUserResponse:
+      type: object
+      properties:
+        Success:
+          type: boolean
+        Message:
+          type: string
+        Data:
+          type: object
+          properties:
+            Username:
+              type: string
+            UserPrincipalName:
+              type: string
+            DisplayName:
+              type: string
+            Department:
+              type: string
+            Title:
+              type: string
+            Password:
+              type: string
+            RollbackEnabled:
+              type: boolean
+            CreatedAt:
+              type: string
+              format: date-time
+
+    RollbackRequest:
+      type: object
+      required:
+        - Username
+      properties:
+        Username:
+          type: string
+        RollbackStatePath:
+          type: string
+
+    RollbackResponse:
+      type: object
+      properties:
+        Success:
+          type: boolean
+        Message:
+          type: string
+        Data:
+          type: object
+          properties:
+            Actions:
+              type: array
+              items:
+                type: string
+            UserRemoved:
+              type: boolean
+            HomeDirectoryRemoved:
+              type: boolean
+            GroupsRemoved:
+              type: array
+              items:
+                type: string
+            Errors:
+              type: array
+              items:
+                type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - Success
+        - Message
+        - ErrorCode
+      properties:
+        Success:
+          type: boolean
+          example: false
+        Message:
+          type: string
+        ErrorCode:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - AUTHORIZATION_ERROR
+            - NOT_FOUND
+            - CONFLICT
+            - RATE_LIMIT_EXCEEDED
+            - TIMEOUT
+            - EXTERNAL_SERVICE_ERROR
+            - INTERNAL_ERROR
+        Data:
+          type: object
+        Timestamp:
+          type: string
+          format: date-time
+
+    StandardResponse:
+      type: object
+      required:
+        - Success
+        - Message
+        - Timestamp
+      properties:
+        Success:
+          type: boolean
+        Message:
+          type: string
+        Data:
+          type: object
+        ErrorCode:
+          type: string
+        Metadata:
+          type: object
+        Timestamp:
+          type: string
+          format: date-time
+
+    DiskSpaceAlertRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        AlertThresholdPercent:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 90
+        IncludeAllDrives:
+          type: boolean
+          default: false
+
+    SoftwareInventoryRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        IncludeUpdates:
+          type: boolean
+          default: false
+        MaxResults:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 100
+
+    WindowsUpdateStatusRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        IncludePendingUpdates:
+          type: boolean
+          default: false
+
+    FailedLoginsRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        HoursBack:
+          type: integer
+          minimum: 1
+          maximum: 720
+          default: 24
+        MaxResults:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+
+    LocalAdminAuditRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        IncludeDomainAdmins:
+          type: boolean
+          default: false
+
+    OpenPortsRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        IncludeUDP:
+          type: boolean
+          default: false
+        WellKnownOnly:
+          type: boolean
+          default: false
+
+    BitLockerStatusRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        Remediate:
+          type: boolean
+          default: false
+
+    ServiceHealthRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        CriticalServices:
+          type: array
+          items:
+            type: string
+          default:
+            - wuauserv
+            - WinDefend
+            - EventLog
+            - RpcSs
+            - Dnscache
+            - Dhcp
+            - LanmanWorkstation
+            - W32Time
+            - MpsSvc
+            - BITS
+            - CryptSvc
+        RestartStopped:
+          type: boolean
+          default: false
+
+    StaleProfilesRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        DaysInactive:
+          type: integer
+          minimum: 30
+          maximum: 730
+          default: 90
+
+    DiskCleanupRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        CleanupTempFiles:
+          type: boolean
+          default: false
+        CleanupRecycleBin:
+          type: boolean
+          default: false
+        CleanupWindowsUpdateCache:
+          type: boolean
+          default: false
+        MinFreeSpaceGB:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+
+    DNSReportRequest:
+      type: object
+      required:
+        - ComputerName
+      properties:
+        ComputerName:
+          type: array
+          items:
+            type: string
+        IncludeDNSSuffixes:
+          type: boolean
+          default: false
+
+    PingSweepRequest:
+      type: object
+      required:
+        - NetworkRange
+      properties:
+        NetworkRange:
+          type: string
+          pattern: '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$'
+        TimeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+        MaxConcurrent:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+
+    NetworkConnectivityRequest:
+      type: object
+      required:
+        - ComputerName
+        - TargetEndpoints
+      properties:
+        ComputerName:
+          type: string
+        TargetEndpoints:
+          type: array
+          items:
+            type: string
+        TestPorts:
+          type: array
+          items:
+            type: integer
+          default: []
+        PortTimeoutSeconds:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 2
+
+    M365LicenseAuditRequest:
+      type: object
+      properties:
+        ExportCSV:
+          type: string
+        EnabledOnly:
+          type: boolean
+          default: false
+
+    MFAStatusReportRequest:
+      type: object
+      properties:
+        EnabledOnly:
+          type: boolean
+          default: false
+        ExportCSV:
+          type: string
+
+    SharedMailboxAccessRequest:
+      type: object
+      properties:
+        ExportCSV:
+          type: string
+
+    InactiveUsersRequest:
+      type: object
+      properties:
+        DaysInactive:
+          type: integer
+          minimum: 30
+          maximum: 730
+          default: 90
+        SearchBase:
+          type: string
+
+    PasswordExpiryRequest:
+      type: object
+      properties:
+        DaysToExpiry:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 30
+        SearchBase:
+          type: string
+
+    UserOffboardRequest:
+      type: object
+      required:
+        - Username
+      properties:
+        Username:
+          type: string
+        RemoveHomeDirectory:
+          type: boolean
+          default: false
+        RemoveGroupMemberships:
+          type: boolean
+          default: false
+        DisableOnly:
+          type: boolean
+          default: false
+        ArchivePath:
+          type: string
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []

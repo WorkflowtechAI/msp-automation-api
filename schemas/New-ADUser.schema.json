@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://msp-automation.schemas.io/user-management.json",
+  "title": "User Management",
+  "description": "Input and output schema for user management operations",
+  "type": "object",
+  "definitions": {
+    "CreateUserRequest": {
+      "type": "object",
+      "required": ["FirstName", "LastName", "Department", "Title"],
+      "properties": {
+        "FirstName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "LastName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "Username": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9-]+$",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "Department": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "Title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "TemplateUser": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9-]+$"
+        },
+        "OU": {
+          "type": "string",
+          "description": "Distinguished name of target OU"
+        },
+        "Password": {
+          "type": "string",
+          "minLength": 8,
+          "description": "Password (auto-generated if not provided)"
+        },
+        "EnableRollback": {
+          "type": "boolean",
+          "default": false
+        },
+        "RollbackStatePath": {
+          "type": "string",
+          "default": "C:\\AutomationState\\Rollbacks"
+        }
+      }
+    },
+    "CreateUserResponse": {
+      "type": "object",
+      "required": ["Username", "UserPrincipalName", "DisplayName", "Department", "Title", "CreatedAt"],
+      "properties": {
+        "Username": {
+          "type": "string"
+        },
+        "UserPrincipalName": {
+          "type": "string",
+          "format": "email"
+        },
+        "DisplayName": {
+          "type": "string"
+        },
+        "Department": {
+          "type": "string"
+        },
+        "Title": {
+          "type": "string"
+        },
+        "OU": {
+          "type": "string"
+        },
+        "HomeDirectory": {
+          "type": "string"
+        },
+        "Password": {
+          "type": "string",
+          "description": "Only returned on creation"
+        },
+        "RollbackEnabled": {
+          "type": "boolean"
+        },
+        "RollbackFile": {
+          "type": ["string", "null"]
+        },
+        "CreatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "RollbackRequest": {
+      "type": "object",
+      "required": ["Username"],
+      "properties": {
+        "Username": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9-]+$"
+        },
+        "RollbackStatePath": {
+          "type": "string",
+          "default": "C:\\AutomationState\\Rollbacks"
+        }
+      }
+    },
+    "RollbackResponse": {
+      "type": "object",
+      "properties": {
+        "Actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "UserRemoved": {
+          "type": "boolean"
+        },
+        "HomeDirectoryRemoved": {
+          "type": "boolean"
+        },
+        "GroupsRemoved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

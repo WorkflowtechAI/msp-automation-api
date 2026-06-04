@@ -1,0 +1,23 @@
+# Data / reports with real host/user info
+*.csv
+*.xlsx
+*.txt
+
+# One-off diagnostic scripts (not part of the library)
+ad-test-query.ps1
+ad-user-query.ps1
+local-admin-report.ps1
+Mail-Zapper.ps1
+update-sysmon.ps1
+upgrade-to-win11-assistant.ps1
+index-page.htm
+
+# Secrets / state
+*-rollback.json
+C:\AutomationState\
+
+# Editor / OS
+.vscode/
+__pycache__/
+Thumbs.db
+.DS_Store
