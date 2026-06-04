@@ -1,4 +1,4 @@
-# ZAG Mail Zapper (Compliance Search & Delete)
+# Mail Zapper (Compliance Search & Delete)
 # Requires Exchange Online Management module (for compliance operations)
 # Install with: Install-Module ExchangeOnlineManagement -Scope CurrentUser
 
@@ -317,7 +317,7 @@ function Search-And-DeleteMail {
 
 # Create the main form
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "ZAG Mail Zapper - Advanced Compliance Search & Delete"
+$form.Text = "Mail Zapper - Advanced Compliance Search & Delete"
 $form.Size = New-Object System.Drawing.Size(950, 1050)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
@@ -986,7 +986,7 @@ $txtUser.Enabled = $true
 $txtUser.BackColor = [System.Drawing.Color]::White
 
 # Show startup information
-$global:OutputTextBox.AppendText(">> ZAG Mail Zapper - USE WITH CAUTION!`r`n")
+$global:OutputTextBox.AppendText(">> Mail Zapper - USE WITH CAUTION!`r`n")
 $global:OutputTextBox.AppendText("`r`nREQUIREMENTS:`r`n")
 $global:OutputTextBox.AppendText("   - Exchange Online Management module (v3.0+ for REST API support)`r`n")
 $global:OutputTextBox.AppendText("   - Install/Update: Install-Module ExchangeOnlineManagement -Force -Scope CurrentUser`r`n")
