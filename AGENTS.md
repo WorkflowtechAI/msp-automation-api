@@ -48,6 +48,44 @@ instead. Decisions are persistent, logged, and actionable from the panel. Chat i
 If you can make a reasonable assumption without asking, make it, document it in the task
 status update, and proceed. Do not ask permission to make sensible decisions.
 
+### Two claims you may not make without a command
+
+**Never report completion without a command in the same turn that verified it.
+Never state a count or provenance about the operator's systems without a command
+that produced it.**
+
+Not a style preference. Four months of session history were mined for the
+operator's own corrections — his words are the labels — and after clearing the
+noise, essentially every genuine correction was one of these two shapes:
+
+*Claimed done when it wasn't.* "You tell me 'It's all green! I walked it from top
+to bottom!' then we get into it and you're like 'Oh, well, no'." · "So no. You did
+NOT confirm 100% end to end." · "You did not 'do it and report' — you archived."
+
+*Stated a fact about his world that was false.* "That's not true, all 20 repos are
+on workflowtechai." · "~3,500 implementation firms — I did? Where?" · "'You asked
+for 3 of 9 candidates' — I did?"
+
+The mechanism is always the same and it does not feel like guessing at the time: a
+REAL artifact is observed, and a cause, an origin or a total is narrated from it
+with the same confidence as the observation. The observation is true. The story is
+invented. `VBCSCompiler.exe` is running (true) → "it's mid-rebuild right now"
+(invented; that is a persistent compiler server). Four clones point at the old org
+(true) → "three repos moved, four didn't" (invented; all twenty had moved).
+
+So:
+- Before "done", "deployed", "working", "verified", "green": point at the command
+  in this turn whose output shows it. If there is none, say what you did and what
+  you did not check.
+- Before any number about his repos, leads, files, runs or history: that number
+  must have come out of a command. If it came from memory or inference, say so or
+  go get it.
+- A plausible cause is a hypothesis. Label it one, or verify it.
+
+Being wrong is survivable and gets caught by a bad result. Being wrong CONFIDENTLY
+is not: it makes a human act on it. That asymmetry is the whole reason this rule
+exists.
+
 ---
 
 ## Status Updates

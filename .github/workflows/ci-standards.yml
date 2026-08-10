@@ -261,19 +261,24 @@ jobs:
         id: kit
         shell: bash
         run: |
-          if [ "$GITHUB_REPOSITORY" = "GestaltWorks/llm-builder-kit" ]; then
+          # Match on the REPO NAME, not owner/name. The owner changed once
+          # already (GestaltWorks -> WorkflowtechAI) and a hardcoded full path
+          # silently stopped matching: the kit would have gone back to demanding
+          # a token to read itself, for no reason a reader could see. The org can
+          # rename again; the repository is still the kit.
+          if [ "${GITHUB_REPOSITORY##*/}" = "llm-builder-kit" ]; then
             echo "self=true" >> "$GITHUB_OUTPUT"
             echo "::notice::This IS the kit — checking the vendored copies against the local templates, no token needed."
           elif [ -n "$KIT_TOKEN" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::KIT_READ_TOKEN is not set, so drift could not be checked — and an unchecked repo must not report a passing drift job. Add a read-only token for GestaltWorks/llm-builder-kit as the KIT_READ_TOKEN secret."
+            echo "::error::KIT_READ_TOKEN is not set, so drift could not be checked — and an unchecked repo must not report a passing drift job. Add a read-only token for WorkflowtechAI/llm-builder-kit as the KIT_READ_TOKEN secret."
             exit 1
           fi
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: steps.kit.outputs.enabled == 'true'
         with:
-          repository: GestaltWorks/llm-builder-kit
+          repository: WorkflowtechAI/llm-builder-kit
           token: ${{ secrets.KIT_READ_TOKEN }}
           path: .kit
       - name: Vendored standards in sync with the kit
