@@ -289,4 +289,12 @@ jobs:
         if: steps.kit.outputs.self == 'true'
         shell: pwsh
         run: ./sync-standards.ps1 -RepoPath . -Check
+      # Kit only: this tests the WRITER, which lives here. A vendored file that
+      # arrives with a header its own parser rejects turns a consuming repo's CI
+      # red for a reason that has nothing to do with that repo's code. The first
+      # .py in the map shipped to two repos with an HTML comment as line 1.
+      - name: Vendored headers parse in their own language (kit repo)
+        if: steps.kit.outputs.self == 'true'
+        shell: pwsh
+        run: ./tests/Test-StandardsHeaders.ps1
 

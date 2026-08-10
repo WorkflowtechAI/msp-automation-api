@@ -246,6 +246,26 @@ Nothing after step 2 may re-admit anything step 2 removed.
 - **Tool-calling is a hard filter, not a preference.** Any agentic loop must drop
   every model whose `supported_parameters` lacks `tools`. A cheap model that
   cannot call tools is not cheap; it is broken.
+- **Input modality is the same kind of filter, and it is easy to forget.** The
+  catalog also reports `architecture.input_modalities` (`text`, `image`,
+  `file`, `video`). A turn that must LOOK at something — a screenshot, a map
+  before placing anything on it, a photographed page — cannot be served by a
+  text-only model at any price or quality, so the candidate set is filtered
+  BEFORE ranking rather than expressed as a preference inside it. Two rules
+  follow, both learned the expensive way:
+  - **Absent means absent.** A model with no declared modalities is treated as
+    text-only. Assuming the good case is how a turn silently routes somewhere
+    it cannot succeed, and the failure surfaces as a bad answer rather than an
+    error, which is the worst possible shape for it.
+  - **Never assume from reputation.** Whether a given model accepts images is a
+    catalog fact to be read, not inferred from the vendor or the tier. Measured
+    on the live catalog (2026-08): 237 of 400 models accept image input, and
+    they are not the ones you would guess — a mid-tier open model accepted
+    image and video while a well-regarded frontier-adjacent model was text-only.
+  A capability the *pipeline* can supply is not the same as one the MODEL has:
+  a headless browser can screenshot a canvas, but that only helps if the routed
+  model can receive the image. Build the eyes and the gate together, or the
+  screenshots go to something blind.
 - **Quality floors use published indices**, not vibes. `agentic_index` is the
   proxy for tool adherence; `intelligence_index` for reasoning. A model with no
   published benchmarks cannot clear a floor: unmeasured is not the same as good.
