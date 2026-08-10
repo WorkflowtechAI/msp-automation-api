@@ -270,7 +270,33 @@ jobs:
             echo "self=true" >> "$GITHUB_OUTPUT"
             echo "::notice::This IS the kit — checking the vendored copies against the local templates, no token needed."
           elif [ -n "$KIT_TOKEN" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            # PRESENT is not the same as VALID, and the difference used to be
+            # invisible. An expired token got past this check, and the failure
+            # surfaced three retries deep inside actions/checkout as
+            # "Bad credentials - https://docs.github.com/rest", which names no
+            # secret, no repo, and no remedy. It took three runs to attribute.
+            #
+            # One API call settles it. 401 means the token is rejected outright
+            # and has to be regenerated; 403/404 means it is a real token whose
+            # access to the kit is missing or unapproved. Those need different
+            # fixes, so the message says which one happened.
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+                     -H "Authorization: Bearer $KIT_TOKEN" \
+                     -H "Accept: application/vnd.github+json" \
+                     https://api.github.com/repos/WorkflowtechAI/llm-builder-kit || echo 000)
+            case "$code" in
+              200)
+                echo "enabled=true" >> "$GITHUB_OUTPUT" ;;
+              401)
+                echo "::error::KIT_READ_TOKEN is set but GitHub rejects it (HTTP 401, \"Bad credentials\"). The token is expired or revoked, not merely under-scoped. Generate a new fine-grained PAT with read access to WorkflowtechAI/llm-builder-kit and replace the secret."
+                exit 1 ;;
+              403|404)
+                echo "::error::KIT_READ_TOKEN is a valid token but cannot read WorkflowtechAI/llm-builder-kit (HTTP $code). Grant it Contents:read on that repository. On a private repo the secret must live on THIS repo — organization secrets reach public repositories only on the Free plan."
+                exit 1 ;;
+              *)
+                echo "::error::Could not verify KIT_READ_TOKEN against the GitHub API (HTTP $code). Refusing to report a passing drift job on an unverified token."
+                exit 1 ;;
+            esac
           else
             echo "::error::KIT_READ_TOKEN is not set, so drift could not be checked — and an unchecked repo must not report a passing drift job. Add a read-only token for WorkflowtechAI/llm-builder-kit as the KIT_READ_TOKEN secret."
             exit 1
@@ -297,4 +323,10 @@ jobs:
         if: steps.kit.outputs.self == 'true'
         shell: pwsh
         run: ./tests/Test-StandardsHeaders.ps1
+      # Also kit only: exercises the "Kit access?" branch above against every
+      # HTTP outcome, so each failure mode has been watched go red once.
+      - name: Kit-access branch names the right remedy (kit repo)
+        if: steps.kit.outputs.self == 'true'
+        shell: bash
+        run: bash tests/Test-KitAccessBranch.sh pipeline/templates/ci-standards.yml
 
