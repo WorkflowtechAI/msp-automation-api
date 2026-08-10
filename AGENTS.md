@@ -9,82 +9,60 @@ Read this before writing a single line of code. Follow it without exception.
 
 ## Before You Start
 
-1. **Read the operator profile.** `personal/operator-profile.md` (in this kit's gitignored `personal/` folder)
-   tells you who you're working with, their communication preferences, what they want you
-   to decide vs escalate, and their hard lines. Apply it. When it conflicts with a hard
-   rule here or in `coding-rules.md`, the rule wins — and you flag the conflict.
+1. **The operator profile** (`personal/operator-profile.md`) carries who you work
+   with, their preferences, what they decide versus what you decide, and their hard
+   lines. A hard rule here or in `coding-rules.md` outranks it, and you flag the
+   conflict when one appears.
 
-2. **Read the task brief.** Your task brief is the authoritative source of scope:
-   - `routing.tier` and `routing.approved` — if tier is `premium` and approved is `false`,
-     write a plan only (see Plan-Only Mode below). Do not execute.
-   - `targetFiles` — your scope. Stay inside it.
-   - `definitionOfDone` — the exit condition. When this is met, you're done.
-   - `webhookUrl` — POST status updates here throughout the task.
+2. **The task brief is the authoritative scope.** `targetFiles` is your boundary.
+   `definitionOfDone` is the exit condition. `webhookUrl` receives status.
+   `routing.approved: false` on a premium tier means plan only (see below).
 
-3. **Read the codebase, not just this document.** Use `list_files` and `read_file` to
-   understand what currently exists before writing anything. Check package versions,
-   read existing implementations, check for deprecation warnings in local docs.
+3. **Read the codebase before writing.** Check package versions, read the existing
+   implementation, check local docs for deprecations. This document describes how
+   to work, not what is already there.
 
-4. **Follow the repo standards.** `docs/standards/coding-rules.md` is the law.
-   If it conflicts with your training data, the file wins.
+4. **`docs/standards/coding-rules.md` is the law.** Where it conflicts with your
+   training data, the file wins.
 
 ---
 
 ## Communication Rules
 
-**You can ask in chat.** The operator gets push notifications from the panel and will see it.
-Use chat for direct, time-sensitive questions where you need a response to unblock a specific
-step. Keep it one question, one specific ask.
+Chat is ephemeral and reaches him by push notification. Decisions
+(POST `/api/decisions`) are persistent, logged, and actionable from the panel.
 
-For things that need async tracking, approval workflow, or a record — POST to `/api/decisions`
-instead. Decisions are persistent, logged, and actionable from the panel. Chat is ephemeral.
+| Situation | Channel |
+|---|---|
+| Quick clarification to unblock this step | chat, one specific ask |
+| Approval before a significant action | `/api/decisions` |
+| Broken and cannot continue | blocked status + chat |
+| Architectural direction or preference | `/api/decisions` (needs a record) |
 
-**Use judgment:**
-- Quick clarification to unblock work right now → ask in chat
-- Approval needed before proceeding with a significant action → POST to `/api/decisions`
-- Something is broken and you can't continue → POST blocked status + ask in chat
-- Architectural direction or preference choice → POST to `/api/decisions` (needs a record)
+Where a reasonable assumption gets you moving, make it, document it in the status
+update, and proceed. Sensible decisions need no permission.
 
-If you can make a reasonable assumption without asking, make it, document it in the task
-status update, and proceed. Do not ask permission to make sensible decisions.
+### Two claims that require a command
 
-### Two claims you may not make without a command
+**Report completion only with a command in this turn whose output shows it.
+State a count or an origin about the operator's systems only from a command that
+produced it.**
 
-**Never report completion without a command in the same turn that verified it.
-Never state a count or provenance about the operator's systems without a command
-that produced it.**
+Derived from four months of his corrections, where nearly every one was a real
+artifact observed and a cause, origin or total narrated from it with equal
+confidence. The observation is true, the story is invented. `VBCSCompiler.exe`
+running (true) became "it's mid-rebuild right now" (invented; that is a
+persistent compiler server). Four clones on the old org (true) became "three
+repos moved, four didn't" (invented; all twenty had moved).
 
-Not a style preference. Four months of session history were mined for the
-operator's own corrections — his words are the labels — and after clearing the
-noise, essentially every genuine correction was one of these two shapes:
-
-*Claimed done when it wasn't.* "You tell me 'It's all green! I walked it from top
-to bottom!' then we get into it and you're like 'Oh, well, no'." · "So no. You did
-NOT confirm 100% end to end." · "You did not 'do it and report' — you archived."
-
-*Stated a fact about his world that was false.* "That's not true, all 20 repos are
-on workflowtechai." · "~3,500 implementation firms — I did? Where?" · "'You asked
-for 3 of 9 candidates' — I did?"
-
-The mechanism is always the same and it does not feel like guessing at the time: a
-REAL artifact is observed, and a cause, an origin or a total is narrated from it
-with the same confidence as the observation. The observation is true. The story is
-invented. `VBCSCompiler.exe` is running (true) → "it's mid-rebuild right now"
-(invented; that is a persistent compiler server). Four clones point at the old org
-(true) → "three repos moved, four didn't" (invented; all twenty had moved).
-
-So:
-- Before "done", "deployed", "working", "verified", "green": point at the command
-  in this turn whose output shows it. If there is none, say what you did and what
-  you did not check.
+- Before "done", "deployed", "working", "verified": point at the command. Absent
+  one, say what you did and what you left unchecked.
 - Before any number about his repos, leads, files, runs or history: that number
-  must have come out of a command. If it came from memory or inference, say so or
-  go get it.
-- A plausible cause is a hypothesis. Label it one, or verify it.
+  came out of a command, or you say where it came from.
+- A plausible cause is a hypothesis. Label it, or verify it.
 
-Being wrong is survivable and gets caught by a bad result. Being wrong CONFIDENTLY
-is not: it makes a human act on it. That asymmetry is the whole reason this rule
-exists.
+A wrong answer gets caught by a bad result. A wrong answer stated confidently
+gets acted on.
 
 ---
 
@@ -129,60 +107,37 @@ Before editing any file, check if another agent is likely working in the same ar
 
 ## Merge and Ship Policy
 
-**The default is to ship, all the way to live.** Merged to main/master == prod
-== live; the merge to the main branch is the live event, not a push to a
-feature/dev branch. A directed or approved task runs end to end — branch, PR,
-merge to main, deploy, smoke check — without a further approval step. Feature
-and dev branches are dev; work them freely. Reaching production by merging a
-directed task is the intended outcome, not a reason to stop.
+**Ship, all the way to live.** Merging to main/master IS the live event. A
+directed or approved task runs end to end: branch, PR, merge, deploy, smoke
+check. Feature and dev branches are dev; work them freely.
 
-**You may expect AUTO-MERGE-AND-SHIP when ALL of:**
-- CI is fully passing (no relevant skipped checks)
-- The reviewer verdict is `autoMerge` (emitted by the `code-reviewer` /
-  `security-reviewer` agents, per `docs/standards/review-standards.md`)
-- No breaking changes detected
-- PR scope is atomic (single task, single concern)
+**Expect auto-merge-and-ship when all of:** CI fully passing with no relevant
+skipped checks, reviewer verdict `autoMerge` (per
+`docs/standards/review-standards.md`), no breaking changes, and atomic PR scope.
 
-**Raise a dashboard Decision (POST `/api/decisions`) — review-and-accept, never
-a silent stop — only for the irreversible tier:**
-- Production data deletion or destructive migration
-- Secret/credential rotation or exposure
-- Payment or billing changes
-- Force-push over shared history
-- Mass external outreach to real people
-- A concrete security hole the reviewer confirms (`needs-operator` with a real
-  finding, not a style nit)
+**Raise a dashboard Decision (POST `/api/decisions`) only for the irreversible
+tier:** production data deletion or destructive migration, secret rotation or
+exposure, payment and billing changes, force-push over shared history, mass
+outreach to real people, or a security hole the reviewer confirms with a real
+finding. Post it, keep working the rest of the task, let the operator accept from
+the dashboard. It is review-and-accept, never a silent stop. Everything outside
+this tier ships.
 
-Post the decision, keep working the rest of the task, and let the operator
-accept or reject from the dashboard. Anything not in this tier ships.
-
-**As the agent, your job is:**
-- Open clean, atomic PRs
-- Write clear PR descriptions: what changed, why, how to verify
-- Do not open a PR that you know will fail auto-merge unless the escalation is intentional
-- If your task had multiple concerns, open multiple PRs — one per atomic change
+**Your part:** clean atomic PRs, one per concern, described by what changed and
+how to verify it.
 
 ---
 
 ## Plan-Only Mode
 
-When `routing.approved: false` in your task brief, credits were insufficient to run the
-required premium model at classification time. The system automatically switched you to
-plan mode. This is not a human decision — it is automatic resource management.
+`routing.approved: false` means credits were short of the required premium model at
+classification time and the system switched you to plan mode automatically.
 
-1. **DO NOT execute.** Write a plan only.
-2. Your plan must include: every file to touch, every step in order, expected outputs,
-   edge cases, risks, and a confidence statement.
-3. POST status `plan-ready` to the webhook.
-4. Stop.
+Write a plan and stop. It covers every file to touch, every step in order, expected
+outputs, edge cases, risks, and a confidence statement. POST status `plan-ready`.
 
-When credits are replenished, the system will notify the operator with options:
-- Approve plan and switch to Act (execute what you planned)
-- Review plan with premium model first
-- Re-run classification and execute directly
-
-You will be re-queued with `routing.approved: true`. At that point, pick up from the plan
-you already wrote — do not re-plan, execute.
+You will be re-queued with `routing.approved: true` once credits allow. Execute the
+plan you already wrote rather than planning again.
 
 ---
 
@@ -198,27 +153,23 @@ you already wrote — do not re-plan, execute.
 
 ## Standards Reference
 
-These files are vendored into each repo (synced from the builder kit) and are
-authoritative for that repo. CI and collaborators rely on the in-repo copies:
+Vendored into each repo from the builder kit and authoritative for that repo. CI
+and collaborators rely on the in-repo copies.
 
-| File | What it governs |
-|------|----------------|
-| `docs/standards/coding-rules.md` | Code style, patterns, what's allowed |
+| File | Governs |
+|------|---------|
+| `docs/standards/coding-rules.md` | Code style, patterns, what is allowed |
 | `docs/standards/secrets.md` | Secret handling, rotation, storage |
-| `docs/standards/model-routing-policy.md` | When to use which model, escalation rules |
-| `docs/standards/review-standards.md` | What reviewer agents enforce; the autoMerge / needs-operator verdict contract |
+| `docs/standards/model-routing-policy.md` | Model selection and escalation |
+| `docs/standards/review-standards.md` | Reviewer enforcement; the autoMerge / needs-operator verdict contract |
 
-Operator-global standards load from the builder kit via Cline's global rules folder
-(`Documents\Cline\Rules`), so they apply on this machine without per-repo copies:
-`writing-style.md`, `operator-profile.md`, `prompt-builder.md`, and the index `claude-rules.md`.
+Missing from a checkout? Pull the canonical version from the kit. Use relative
+paths inside repos.
 
-**When writing any markdown, docs, PR descriptions, task briefs, or comments:**
-State what IS. Show the behavior rather than describe it. Use active voice and present
-tense. State constraints as positive rules. "Use Y" not "avoid X". See `writing-style.md`
-in the kit's `reference/`.
-
-If a `docs/standards/` file is missing in a checkout, pull the canonical version from the
-builder kit. Use relative paths inside repos.
+**Writing anything (markdown, PR descriptions, briefs, comments):** state what
+IS, show the behavior, active voice, present tense, constraints as positive
+rules. "Use Y" rather than "avoid X". Full standard: `reference/writing-style.md`
+in the kit.
 
 ---
 
