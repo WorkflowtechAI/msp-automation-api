@@ -329,4 +329,11 @@ jobs:
         if: steps.kit.outputs.self == 'true'
         shell: bash
         run: bash tests/Test-KitAccessBranch.sh pipeline/templates/ci-standards.yml
+      # Kit only: the value that reaches GitHub must be the value in the file.
+      # A pipe that appends CRLF, or quotes carried out of a dotenv line, both
+      # produce a 401 while the real token still reports never used.
+      - name: Secret values survive the trip intact (kit repo)
+        if: steps.kit.outputs.self == 'true'
+        shell: pwsh
+        run: ./tests/Test-SecretHygiene.ps1
 
