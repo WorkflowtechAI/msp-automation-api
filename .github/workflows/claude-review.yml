@@ -1,6 +1,13 @@
-# Claude code review — dropped into a repo by operator-tools/Bootstrap-Repo.ps1.
-# Posts a Claude review comment on every PR. Needs the ANTHROPIC_API_KEY repo
-# secret (Bootstrap-Repo / Sync-Secrets sets it). Fork PRs get no secret access.
+# Claude code review. Posts a review comment on every PR.
+#
+# A repo gets this file two ways: operator-tools/Bootstrap-Repo.ps1 at onboarding,
+# or by naming claude-review in docs/standards/.standards-include, which puts it
+# on the same drift check as every other vendored standard.
+#
+# Needs ANTHROPIC_API_KEY, as an organization secret visible to the repo or a repo
+# secret. Bootstrap-Repo / Sync-Secrets sets the repo form; a repo that opted in
+# later has to be granted the key, and the first step here fails loudly until it
+# is. Fork PRs get no secret access.
 name: Claude code review
 
 on:
@@ -43,11 +50,44 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       REVIEW_SCOPE: ${{ github.event.inputs.review_scope || 'diff' }}
     steps:
+      # The key is checked FIRST, and its absence is red.
+      #
+      # Without it the reviewer wrote "Skipped: ANTHROPIC_API_KEY is not
+      # configured" and exited zero, so the PR showed a green "Claude code
+      # review" check next to a review that never happened. A check that
+      # reports success while skipping is worse than one that fails: the green
+      # is what gets trusted, and review-standards.md feeds the auto-merge
+      # verdict. Two repos ran in exactly that state.
+      #
+      # Same reason this is a step and not an `if:` on the job: a skipped job
+      # also reports as not-failed.
+      - name: Require the review key
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set for ${GITHUB_REPOSITORY}, so no review ran." \
+                 "Set it as an organization secret (visible to this repo) or a repo secret," \
+                 "or remove claude-review from docs/standards/.standards-include to stop asking for it."
+            {
+              echo "## Claude Code Review"
+              echo
+              echo "No review ran: \`ANTHROPIC_API_KEY\` is not configured for this repository."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
           fetch-depth: 0
+
+      # The reviewer's own parsing is tested BEFORE it is trusted to review.
+      # It failed silently once (thinking-block-first responses parsed to empty,
+      # posted "No review text returned", and passed CI on ~2,048 billed output
+      # tokens), so the response-shape handling now has to prove itself on every
+      # run. Pure and network-free: no key, no API call, ~0.0s.
+      - name: Test the reviewer before reviewing
+        run: python .github/scripts/test_claude_review.py
 
       - name: Review with Claude
         run: python .github/scripts/claude_review.py
