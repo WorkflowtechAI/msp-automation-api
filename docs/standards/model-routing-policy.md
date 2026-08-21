@@ -1,4 +1,8 @@
+---
+kind: durable
+---
 <!-- AUTO-SYNCED from the LLM Builder Kit. Do not edit here; edit the kit source and re-run sync-standards.ps1. -->
+
 
 # Model Routing Policy
 

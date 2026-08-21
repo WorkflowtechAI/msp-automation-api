@@ -1,4 +1,8 @@
+---
+kind: durable
+---
 <!-- AUTO-SYNCED from the LLM Builder Kit. Do not edit here; edit the kit source and re-run sync-standards.ps1. -->
+
 
 # AGENTS.md — EGI Agent Behavior Contract
 
@@ -148,6 +152,23 @@ plan you already wrote rather than planning again.
 - Never commit `.env` files or anything with real credentials.
 - Use environment variables. Use the secrets store (`lib/secrets.ts` if it exists in this repo).
 - If you need a new secret, add the variable name to `.env.example` with a placeholder and note it in your task status.
+
+---
+
+## In-App Browser Hygiene
+
+The in-app browser's tabs are APP-LEVEL: they render no window of their own,
+they outlive your turn AND the session, and they die only when the whole Claude
+app closes. On 2026-08-19 a session opened a prospect's YouTube video while
+debugging and returned without closing it — the operator hunted phantom Spanish
+audio across his machine and had to kill the entire app (taking the factory
+down with it) to silence one abandoned tab.
+
+- Prefer WebSearch/WebFetch for research; open the in-app browser only when you
+  need a rendered page.
+- Close EVERY tab you opened (`tabs_close`) before ending the turn that opened it.
+- Never leave a media page loaded — YouTube, Vimeo, podcast or video players —
+  even mid-task. Autoplay chains indefinitely, from a page nobody can see.
 
 ---
 
