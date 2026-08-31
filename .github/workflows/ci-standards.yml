@@ -39,7 +39,20 @@ jobs:
     # Hosted for a PUBLIC repo (free there; the org runner pool excludes public
     # repos and must never take a fork PR), the egi-vps pool for everything else;
     # an unknown visibility falls to the pool. Same line in every kit workflow.
-    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64"]') }}
+    # Fork PRs go to hosted runners whatever the repo's visibility. Keying
+    # on visibility alone let a fork PR against a PRIVATE repo run on the
+    # pool -- the same box as GWEDU production and the broker. The comment
+    # here used to claim the pool 'must never take a fork PR' while nothing
+    # checked; found by review on two separate rollout PRs.
+    #
+    # On push, pull_request is null and full_name is empty, so the fork
+    # clause is falsy and the visibility rule decides, exactly as before.
+    runs-on: >-
+      ${{ (github.event.repository.visibility == 'public'
+      || (github.event.pull_request.head.repo.full_name
+      && github.event.pull_request.head.repo.full_name != github.repository))
+      && 'ubuntu-latest'
+      || fromJSON('["self-hosted","Linux","X64"]') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -275,7 +288,20 @@ jobs:
 
   standards-drift:
     # As build-test: hosted only for a public repo, the pool otherwise.
-    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64"]') }}
+    # Fork PRs go to hosted runners whatever the repo's visibility. Keying
+    # on visibility alone let a fork PR against a PRIVATE repo run on the
+    # pool -- the same box as GWEDU production and the broker. The comment
+    # here used to claim the pool 'must never take a fork PR' while nothing
+    # checked; found by review on two separate rollout PRs.
+    #
+    # On push, pull_request is null and full_name is empty, so the fork
+    # clause is falsy and the visibility rule decides, exactly as before.
+    runs-on: >-
+      ${{ (github.event.repository.visibility == 'public'
+      || (github.event.pull_request.head.repo.full_name
+      && github.event.pull_request.head.repo.full_name != github.repository))
+      && 'ubuntu-latest'
+      || fromJSON('["self-hosted","Linux","X64"]') }}
     timeout-minutes: 10
     env:
       KIT_TOKEN: ${{ secrets.KIT_READ_TOKEN }}
