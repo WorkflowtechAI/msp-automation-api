@@ -1,4 +1,8 @@
+---
+kind: durable
+---
 <!-- AUTO-SYNCED from the LLM Builder Kit. Do not edit here; edit the kit source and re-run sync-standards.ps1. -->
+
 
 # Model Routing Policy
 
@@ -630,4 +634,3 @@ the model — do not keep retrying the same prompt.
 - Redact tool output before reinjecting it into model context.
 - Never pass long-lived secrets into prompts, RAG chunks, telemetry, logs,
   client state, or model-visible tool arguments.
-
