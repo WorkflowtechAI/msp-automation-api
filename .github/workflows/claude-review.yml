@@ -36,7 +36,7 @@ concurrency:
 jobs:
   review:
     name: Claude code review
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64"]') }}
     # Only run with secrets for same-repo PRs; fork PRs never see the key.
     if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
     env:
