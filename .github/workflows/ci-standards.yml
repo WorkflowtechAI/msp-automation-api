@@ -21,9 +21,25 @@ on:
 permissions:
   contents: read
 
+# One run per branch, not one per event. A workflow on both `push` and
+# `pull_request` fires twice for the same commit, and a group keyed on
+# `github.ref` does NOT de-duplicate them: that is `refs/heads/<branch>` for the
+# push and `refs/pull/<n>/merge` for the pull request, so the two land in
+# different groups and neither cancels the other.
+# `github.head_ref || github.ref_name` is the branch name for both events, so
+# they share a group and the newer run wins. GestaltWorkframeEDU's
+# tests/test_ci_does_not_run_itself_twice.py measured the cost of getting this
+# wrong: seven open PRs put fourteen live runs on two self-hosted runners.
+concurrency:
+  group: ci-standards-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    # Hosted for a PUBLIC repo (free there; the org runner pool excludes public
+    # repos and must never take a fork PR), the egi-vps pool for everything else;
+    # an unknown visibility falls to the pool. Same line in every kit workflow.
+    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64"]') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -90,9 +106,25 @@ jobs:
           dotnet_tests=$(printf '%s\n' "$dotnet_projects" | grep -Ei '\.?tests?\.csproj$|tests?/' || true)
           has_dotnet=false
           if [ -n "$dotnet_projects" ]; then has_dotnet=true; fi
+          # Which SDK majors to install, read from the projects' own
+          # <TargetFramework(s)>: net10.0 -> 10.0.x. The self-hosted runners
+          # carry no SDK (ubuntu-latest did, silently), so setup-dotnet below
+          # installs exactly what the detected projects ask for. A project whose
+          # TFM lives in a Directory.Build.props this grep does not see falls
+          # back to 10.0.x, the major ubuntu-latest shipped when this moved.
+          dotnet_versions=""
+          if [ "$has_dotnet" = true ]; then
+            dotnet_versions=$(printf '%s\n' "$dotnet_projects" | xargs grep -hoE '<TargetFrameworks?>[^<]+' 2>/dev/null \
+                                | grep -oE 'net[0-9]+\.[0-9]+' | sed -E 's/^net//; s/$/.x/' | sort -uV || true)
+            if [ -z "$dotnet_versions" ]; then
+              dotnet_versions="10.0.x"
+              echo "::warning::no <TargetFramework> resolved from the detected .csproj files; installing the 10.0.x SDK by default"
+            fi
+          fi
           {
             echo "dotnet_projects<<__EOF__"; printf '%s\n' "$dotnet_projects"; echo "__EOF__"
             echo "dotnet_tests<<__EOF__";    printf '%s\n' "$dotnet_tests";    echo "__EOF__"
+            echo "dotnet_versions<<__EOF__"; printf '%s\n' "$dotnet_versions"; echo "__EOF__"
           } >> "$GITHUB_OUTPUT"
           echo "has_node=$has_node"    >> "$GITHUB_OUTPUT"
           echo "node_dir=$node_dir"    >> "$GITHUB_OUTPUT"
@@ -188,7 +220,22 @@ jobs:
           python3 -m compileall -q . -x '(\.git|node_modules|\.venv)' || { echo "::error::Python syntax errors found"; exit 1; }
           echo "::warning::script-only repo — the trust floor is syntax-only here (no tests)"
 
-      # --- .NET (preinstalled on ubuntu runners; no extra action to pin) ---
+      # --- .NET ---
+      # This used to read "preinstalled on ubuntu runners; no extra action to
+      # pin". The egi-vps self-hosted runners carry no SDK, and the first run
+      # there died on `dotnet: command not found` with nothing built. Install the
+      # SDK majors the detect step read from the projects. DOTNET_INSTALL_DIR is
+      # pointed into the runner's tool cache: the action's Linux default is
+      # /usr/share/dotnet, which the unprivileged runner user cannot write, and
+      # the tool cache persists between jobs so the download happens once per
+      # runner, not once per run. The action exports DOTNET_ROOT and PATH for the
+      # steps that follow.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: steps.detect.outputs.has_dotnet == 'true'
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
+        with:
+          dotnet-version: ${{ steps.detect.outputs.dotnet_versions }}
       - name: Dotnet build + test
         if: steps.detect.outputs.has_dotnet == 'true'
         shell: bash
@@ -227,7 +274,8 @@ jobs:
           fi
 
   standards-drift:
-    runs-on: ubuntu-latest
+    # As build-test: hosted only for a public repo, the pool otherwise.
+    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64"]') }}
     timeout-minutes: 10
     env:
       KIT_TOKEN: ${{ secrets.KIT_READ_TOKEN }}
@@ -336,4 +384,35 @@ jobs:
         if: steps.kit.outputs.self == 'true'
         shell: pwsh
         run: ./tests/Test-SecretHygiene.ps1
-
+      # Kit only: docs/maps ships GENERATED artifacts into git, so the gate that
+      # decides whether they carry a credential is the one thing between an
+      # extraction run and permanent history. It was previously invoked only by
+      # a local script, which meant a hand-edited map, or a skipped run, shipped
+      # unchecked. This also py_compiles both gate scripts: two consecutive
+      # reviews called them a SyntaxError from redacted output while they
+      # compiled fine, and inspection is a poor way to settle that.
+      - name: docs/maps secret gate actually catches things (kit repo)
+        if: steps.kit.outputs.self == 'true'
+        shell: pwsh
+        run: ./tests/Test-MapsSecretGate.ps1
+      # Kit only: operator-tools/__tests__/ was discovered by nothing, so both
+      # suites there passed locally and had NEVER run in CI -- which makes a
+      # pass worth less than it looks. The runner body lives in a SCRIPT rather
+      # than inline here: it was ~40 identical lines in this template and in
+      # its vendored copy, and review flagged that as drift-prone five times.
+      # tests/Invoke-OperatorToolsSuites.ps1 also runs the same way locally.
+      - name: operator-tools suites (kit repo)
+        if: steps.kit.outputs.self == 'true'
+        shell: pwsh
+        run: ./tests/Invoke-OperatorToolsSuites.ps1
+      # Kit only: the systems map's fact checker had never run here. It was
+      # invoked solely by Update-Maps.ps1, on the operator's laptop -- the one
+      # machine whose working tree makes its claims pass -- so "18 claims hold"
+      # had never been evaluated anywhere it could fail. Running it on a clean
+      # tree found two real defects immediately. Body in a script for the same
+      # reason as the step above; see that file for why --store-optional is what
+      # makes this runnable at all.
+      - name: systems map facts hold (kit repo)
+        if: steps.kit.outputs.self == 'true'
+        shell: pwsh
+        run: ./tests/Invoke-SystemsMapCheck.ps1
