@@ -1,50 +1,74 @@
-# MSP Automation API Library v2.0
+# MSP Automation API Library
 
-## Overview
+## What this is
 
-This is a production-ready, API-automation library designed specifically for orchestration platforms like Rewst, n8n, and other automation frameworks. It transforms traditional PowerShell scripts into standardized, idempotent, observable API endpoints with comprehensive error handling, rollback capabilities, and enterprise-grade security.
+A **reference implementation** of an API-shaped automation pattern for MSP orchestration
+platforms like Rewst and n8n. It takes the usual pile of interactive PowerShell scripts
+and shows what they look like when they are rebuilt as callable operations: standardized
+JSON responses, machine-checkable input validation, idempotency keys, a metrics and
+tracing surface, and schema contracts.
 
-## What Changed in v2.0
+**What it is not:** a published, versioned, production-deployed library. There are no
+releases, no tags, no PowerShell Gallery package, and no users besides its author. The
+Pester suite does not run in CI (see [Testing](#testing) for why). Treat this as a worked
+example of the pattern, not as a dependency.
 
-**From**: Interactive PowerShell scripts for manual execution  
-**To**: API-ready automation modules for orchestration platform integration
+The pattern is the point. The code demonstrates it on a handful of real operations.
 
-### Key Transformations
+## Status of each capability
 
-- **API-Ready Structure**: All modules return standardized JSON responses with HTTP-like error codes
-- **Idempotency Guarantees**: Operations can be safely re-run without side effects
-- **Rollback Capabilities**: Every destructive operation has an automatic rollback companion
-- **Observability Integration**: Built-in Prometheus metrics and distributed tracing (OpenTelemetry-compatible)
-- **Security Boundaries**: Documented permission models and least-privilege execution
-- **Schema Contracts**: JSON Schema and OpenAPI specifications for all operations
-- **Comprehensive Testing**: Pester test suite with CI/CD integration
-- **Multi-Tenant Support**: Built-in tenant isolation and context management
+Being precise about this up front, because a README that oversells is worse than no
+README.
+
+| Capability | Status |
+|---|---|
+| Standardized JSON responses (`ApiResponse`) | **Implemented** |
+| Input validation (`Validator`) | **Implemented** |
+| Idempotency keys and state (`Idempotency`) | **Implemented** |
+| Multi-tenant security context (`SecurityContext`) | **Implemented** |
+| Standardized execution wrapper (`Invoke-AutomationOperation`) | **Implemented** |
+| Prometheus metrics | **Implemented** |
+| Distributed tracing, W3C `traceparent` format | **Implemented**, hand-rolled. Not an OpenTelemetry SDK integration. |
+| JSON Schema contracts | **Partial.** Three schemas, not one per operation. |
+| OpenAPI specification | **Partial.** 23 operations described. |
+| Pester test suite | **Written, but not run in CI.** No mocking; needs a live host and AD. |
+| Rollback | **Not implemented.** Design goal only. See [Rollback](#rollback). |
+| CI/CD pipeline | **Standards and secret scanning only.** No Pester run, no packaging, no deploy. |
 
 ## Architecture
 
 ```
-msp-admin-scripts/
-├── modules/                    # API-ready automation modules
-│   ├── MSPAutomation.Core.psm1 # Core framework (responses, validation, observability)
-│   ├── Endpoint/               # System inventory and health checks
-│   ├── Security/               # Security operations and compliance
-│   ├── Backup/                 # Backup verification and recovery
-│   ├── Patching/               # Patch management operations
-│   ├── Compliance/             # Multi-framework compliance auditing
-│   └── UserManagement/         # AD user lifecycle with rollback
-├── schemas/                    # JSON Schema contracts for validation
-├── specs/                      # OpenAPI/Swagger specifications
-├── observability/              # Prometheus metrics and distributed tracing
-├── security/                   # Security boundaries and permission models
-├── tests/                      # Pester test suite
-├── rollbacks/                  # Rollback state management
-├── config/                     # Configuration management
-└── .github/workflows/          # CI/CD pipeline
+msp-automation-api/
+├── modules/
+│   ├── MSPAutomation.Core.psm1   Core framework: responses, validation,
+│   │                             idempotency, security context, observability hooks
+│   ├── Endpoint/                 Get-SystemInventory.psm1, Get-DiskSpaceAlert.psm1
+│   ├── M365/                     Get-M365Audit.psm1
+│   ├── Maintenance/              Invoke-Maintenance.psm1
+│   ├── Network/                  Get-NetworkInfo.psm1
+│   ├── Security/                 Get-SecurityAudit.psm1
+│   └── UserManagement/           New-ADUser.psm1, Invoke-UserLifecycle.psm1
+├── observability/                PrometheusMetrics.psm1 (metrics + W3C tracing)
+├── schemas/                      AllModules, Get-SystemInventory, New-ADUser
+├── specs/                        msp-automation-openapi.yaml
+├── security/                     SecurityBoundaries.md
+├── config/                       MSPConfig.psd1
+├── tests/                        MSPAutomation.Tests.ps1
+├── docs/
+└── .github/workflows/            ci-standards, claude-review, secret-scan
 ```
 
-## Quick Start for Orchestration Platforms
+The `backup-recovery/`, `compliance/`, `endpoint-inventory/`, `m365-azure/`,
+`maintenance/`, `network/`, `patch-management/`, `security-audit/` and `user-management/`
+directories at the repo root hold the **original v1 interactive scripts**. They are kept
+for reference. The API-shaped rewrite lives under `modules/` and covers a subset of them.
 
-### 1. Integration with Rewst
+`Mail-Zapper.ps1` at the root is a standalone v1 utility, unrelated to the module
+framework.
+
+## Quick start
+
+### With Rewst
 
 ```json
 {
@@ -66,30 +90,25 @@ msp-admin-scripts/
 }
 ```
 
-### 2. Integration with n8n
+### With n8n
 
 ```javascript
 // PowerShell Execute node
-$modulePath = "C:\\Scripts\\msp-admin-scripts\\modules\\Endpoint\\Get-SystemInventory.psm1"
+$modulePath = "C:\\Scripts\\msp-automation-api\\modules\\Endpoint\\Get-SystemInventory.psm1"
 Import-Module $modulePath -Force
 
 $result = Get-SystemInventory -ComputerName @("PC01", "PC02") -IncludeDiskSpace
 return $result.ToJson()
 ```
 
-### 3. Direct PowerShell Usage
+### Direct
 
 ```powershell
-# Import the core module
-Import-Module "C:\Scripts\msp-admin-scripts\modules\MSPAutomation.Core.psm1" -Force
+Import-Module "C:\Scripts\msp-automation-api\modules\MSPAutomation.Core.psm1" -Force
+Import-Module "C:\Scripts\msp-automation-api\modules\Endpoint\Get-SystemInventory.psm1" -Force
 
-# Import specific module
-Import-Module "C:\Scripts\msp-admin-scripts\modules\Endpoint\Get-SystemInventory.psm1" -Force
-
-# Execute operation
 $response = Get-SystemInventory -ComputerName @("PC01", "PC02") -IncludeDiskSpace -EnableIdempotency
 
-# Check response
 if ($response.Success) {
     $response.Data | ConvertTo-Json -Depth 10
 } else {
@@ -97,330 +116,209 @@ if ($response.Success) {
 }
 ```
 
-## Available Modules
+## Core module
 
-### Core Module (`MSPAutomation.Core.psm1`)
+`modules/MSPAutomation.Core.psm1`
 
-**Purpose**: Foundation for all automation operations
+**Classes:** `ApiResponse`, `ValidationException`, `Observability`, `Validator`,
+`Idempotency`, `SecurityContext`.
 
-**Key Classes**:
-- `ApiResponse`: Standardized response format with JSON serialization
-- `ErrorCodes`: Standardized error code constants
-- `Observability`: Metrics and tracing hooks
-- `Validator`: Input validation framework
-- `Idempotency`: Idempotency key generation and state management
-- `SecurityContext`: Multi-tenant security context
+**Exported functions:** `New-ApiResponse`, `New-ErrorResponse`, `New-SuccessResponse`,
+`Invoke-AutomationOperation`.
 
-**Key Functions**:
-- `New-ApiResponse`, `New-ErrorResponse`, `New-SuccessResponse`
-- `Invoke-AutomationOperation`: Standardized execution wrapper
+Error codes are string constants used in `ApiResponse.ErrorCode`, not a class.
 
-### Endpoint Module
+## Available operations
 
-**Functions**:
-- `Get-SystemInventory`: Comprehensive system inventory with parallel execution
-- `Get-SystemHealth`: Quick health status for monitoring dashboards
+| Module | Functions |
+|---|---|
+| Endpoint | `Get-SystemInventory`, `Get-SystemHealth`, `Get-DiskSpaceAlert` |
+| M365 | `Get-M365Audit` |
+| Maintenance | `Invoke-Maintenance` |
+| Network | `Get-NetworkInfo` |
+| Security | `Get-SecurityAudit` |
+| UserManagement | `New-ADUser`, `Invoke-UserLifecycle` |
 
-**Features**:
-- Configurable data collection (disks, network, software)
-- Timeout management
-- Idempotency support
-- Observability integration
+`Get-SystemHealth` ships inside `Get-SystemInventory.psm1`.
 
-**Schema**: `schemas/Get-SystemInventory.schema.json`
+## Response format
 
-### User Management Module
-
-**Functions**:
-- `New-ADUser`: Create AD users with standardized settings
-- `Undo-ADUserCreation`: Automatic rollback of user creation
-
-**Features**:
-- Template user copying
-- Home directory creation with permissions
-- Automatic rollback on failure
-- Group membership management
-- Idempotency checks
-
-**Schema**: `schemas/New-ADUser.schema.json`
-
-**Rollback**: Automatic rollback state management
-
-## Standardized Response Format
-
-All modules return `ApiResponse` objects:
+Every operation returns an `ApiResponse`:
 
 ```json
 {
   "Success": true,
   "Message": "Operation completed successfully",
-  "Data": {
-    // Operation-specific data
-  },
+  "Data": {},
   "ErrorCode": null,
   "Metadata": {},
   "Timestamp": "2026-06-03T16:30:00Z"
 }
 ```
 
-### Error Response Format
+Error shape:
 
 ```json
 {
   "Success": false,
   "Message": "Validation failed",
   "ErrorCode": "VALIDATION_ERROR",
-  "Data": {
-    "Field": "Username",
-    "Issue": "Required field missing"
-  },
+  "Data": { "Field": "Username", "Issue": "Required field missing" },
   "Metadata": {},
   "Timestamp": "2026-06-03T16:30:00Z"
 }
 ```
 
-### Standard Error Codes
+Error codes in use: `VALIDATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `CONFLICT`,
+`RATE_LIMIT_EXCEEDED`, `TIMEOUT`, `EXTERNAL_SERVICE_ERROR`, `INTERNAL_ERROR`.
 
-- `VALIDATION_ERROR`: Input validation failed
-- `AUTHORIZATION_ERROR`: Permission denied
-- `NOT_FOUND`: Resource not found
-- `CONFLICT`: Resource already exists (idempotency)
-- `RATE_LIMIT_EXCEEDED`: Too many requests
-- `TIMEOUT`: Operation timed out
-- `EXTERNAL_SERVICE_ERROR`: Third-party service failure
-- `INTERNAL_ERROR`: Unexpected error
+## Observability
 
-## Observability Integration
+`observability/PrometheusMetrics.psm1` holds two classes, `PrometheusMetrics` and
+`DistributedTracing`, and exports six functions.
 
-### Prometheus Metrics
+### Metrics
 
 ```powershell
-# Import observability module
-Import-Module "C:\Scripts\msp-admin-scripts\observability\PrometheusMetrics.psm1" -Force
+Import-Module "C:\Scripts\msp-automation-api\observability\PrometheusMetrics.psm1" -Force
 
-# Record operation metrics
-Record-OperationMetrics -OperationName "Get-SystemInventory" -Success $true -DurationMs 1250
+Write-OperationMetrics -OperationName "Get-SystemInventory" -Success $true -DurationMs 1250
+Write-SystemMetrics -ComputerName "PC01" -CPUPercent 45.2 -MemoryPercent 72.1 -DiskPercent 85.3
 
-# Record system metrics
-Record-SystemMetrics -ComputerName "PC01" -CPUPercent 45.2 -MemoryPercent 72.1 -DiskPercent 85.3
-
-# Export metrics for Prometheus
 $metrics = [PrometheusMetrics]::ExportMetrics()
 ```
 
-### Distributed Tracing
+### Tracing
 
 ```powershell
-# Start a trace
 $spanId = Start-OperationTrace -OperationName "UserCreation"
-
-# Add tags
 Add-TraceTag -SpanId $spanId -Key "userId" -Value "jdoe"
-Add-TraceTag -SpanId $spanId -Key "tenantId" -Value "tenant123"
-
-# Complete the trace
 Stop-OperationTrace -SpanId $spanId -Status "OK"
-
-# Get trace parent header for propagation
-$header = Get-TraceParentHeader
+Get-TraceParentHeader
 ```
 
-## Security Model
+Spans are emitted in **W3C Trace Context `traceparent` format**, which is what makes them
+readable by an OpenTelemetry collector downstream. There is no OTel SDK in this repo and
+no exporter. The header format is the whole of the compatibility claim.
 
-### Permission Requirements
+## Rollback
 
-Each module documents exact permission requirements in `security/SecurityBoundaries.md`:
+**Not implemented.** The design intent is that every destructive operation ships an
+`Undo-` companion and that `Invoke-AutomationOperation` records enough state to call it.
+Neither exists yet: there is no rollback framework in the core module, no `rollbacks/`
+directory, and no `Undo-` function in any module.
 
-- **Endpoint**: Local Administrator, WinRM access
-- **User Management**: AD user creation, file system ACLs
-- **Security**: BitLocker, Defender, security logs
-- **Backup**: Backup system read access
-- **Patching**: Windows Update, service control, reboot
-- **Compliance**: Read-only access to all systems
+`New-ADUser` performs its own cleanup on failure within a single invocation. That is
+error handling, not rollback, and it does not survive the process exiting.
 
-### Multi-Tenant Isolation
+If you are evaluating this repo for rollback behaviour, it is not here.
+
+## Security model
+
+`security/SecurityBoundaries.md` documents the permission requirements per module.
+
+Multi-tenant isolation is expressed through `SecurityContext`:
 
 ```powershell
-# Create security context
 $securityContext = [SecurityContext]::new("tenant123", "operator456")
 $securityContext.Roles = @("UserAdmin", "SecurityReader")
 
-# Check permissions
 if ($securityContext.HasPermission("CreateUser")) {
-    # Proceed with operation
+    # proceed
 }
 ```
 
 ## Testing
 
-### Run Pester Tests
-
 ```powershell
-# Import Pester
 Import-Module Pester -MinimumVersion 5.3.0
-
-# Run all tests
 Invoke-Pester -Path ./tests/MSPAutomation.Tests.ps1 -Verbose
-
-# Run specific test suite
-Invoke-Pester -Path ./tests/MSPAutomation.Tests.ps1 -Filter "Endpoint Module Tests"
 ```
 
-### CI/CD Pipeline
+**The suite does not run in CI, and this is the honest reason:** it uses no mocking. It
+resolves `$env:COMPUTERNAME` and probes for the ActiveDirectory module, so it needs a real
+Windows host in a real domain. A clean CI runner has neither, so wiring it into a workflow
+today would produce a red build that says nothing about the code.
 
-The library includes a GitHub Actions CI/CD pipeline that:
+Fixing it means mocking the AD and WMI calls so the suite tests the framework rather than
+the host. That work has not been done.
 
-- Runs Pester tests on every push
-- Validates JSON schemas
-- Validates OpenAPI specifications
-- Performs security scanning with Trivy
-- Builds and packages modules
-- Deploys to production environments
-- Sends notifications via Slack
+## CI
+
+`.github/workflows/` contains three workflows, all vendored from the builder kit:
+
+| Workflow | What it does |
+|---|---|
+| `ci-standards.yml` | Standards-drift check and header/secret-hygiene tests |
+| `claude-review.yml` | Automated review on pull requests |
+| `secret-scan.yml` | Secret scanning |
+
+`ci-standards.yml` detects Node, Python and .NET projects. **It does not detect
+PowerShell**, so no Pester step runs. There is no packaging step, no Trivy scan, no
+deployment stage and no notification integration.
 
 ## Configuration
 
-### Configuration File
-
-Edit `config/MSPConfig.psd1` for environment-specific settings:
+`config/MSPConfig.psd1`:
 
 ```powershell
 @{
     Domain = @{
-        DNSRoot = "yourdomain.com"
-        DefaultOU = "OU=Users,OU=Company,DC=yourdomain,DC=com"
+        DNSRoot    = "yourdomain.com"
+        DefaultOU  = "OU=Users,OU=Company,DC=yourdomain,DC=com"
     }
-    Logging = @{
-        Path = "C:\Logs\MSP"
-        Level = "Info"
-    }
-    Security = @{
-        BitLockerRequired = $true
-        RequireMFA = $true
-    }
+    Logging  = @{ Path = "C:\Logs\MSP"; Level = "Info" }
+    Security = @{ BitLockerRequired = $true; RequireMFA = $true }
 }
 ```
 
-### Environment Variables
+Environment variables:
 
 ```powershell
-$env:MSP_CONFIG_PATH = "C:\Scripts\msp-admin-scripts\config\MSPConfig.psd1"
-$env:MSP_STATE_PATH = "C:\AutomationState"
-$env:MSP_LOG_LEVEL = "Info"
+$env:MSP_CONFIG_PATH = "C:\Scripts\msp-automation-api\config\MSPConfig.psd1"
+$env:MSP_STATE_PATH  = "C:\AutomationState"
+$env:MSP_LOG_LEVEL   = "Info"
 ```
 
-## Migration from v1.0 Scripts
+## What the v1 to v2 rewrite changed
 
-### Key Differences
-
-| Feature | v1.0 Scripts | v2.0 Modules |
-|---------|-------------|--------------|
-| Execution | Interactive | API-ready |
+| Feature | v1 scripts | v2 modules |
+|---|---|---|
+| Execution | Interactive | Callable operation |
 | Output | Console + CSV | Structured JSON |
-| Error Handling | Basic try/catch | Standardized error codes |
-| Idempotency | Manual | Built-in |
-| Rollback | Manual | Automatic |
-| Observability | File logging | Prometheus + Tracing |
-| Testing | Manual | Comprehensive Pester |
-| Documentation | Comment-based | Schema + OpenAPI |
+| Error handling | try/catch | Standardized error codes |
+| Idempotency | Manual | Built in |
+| Observability | File logging | Prometheus + W3C tracing |
+| Testing | Manual | Pester suite (not yet in CI) |
+| Documentation | Comment-based | Schema + OpenAPI, partial coverage |
 
-### Migration Example
+The v1 scripts remain in the root directories. The rewrite covers a subset of them.
 
-**Old (v1.0)**:
-```powershell
-.\Get-SystemInventory.ps1 -ComputerName PC01,PC02 -ExportCSV "inventory.csv"
-```
+## Known gaps
 
-**New (v2.0)**:
-```powershell
-$response = Get-SystemInventory -ComputerName @("PC01", "PC02") -EnableIdempotency
-if ($response.Success) {
-    $response.Data.Inventory | ConvertTo-Json -Depth 10 | Out-File "inventory.json"
-}
-```
+Listed so nobody has to discover them by reading the source:
 
-## Performance Characteristics
-
-### Benchmarks
-
-- **System Health Check**: < 2 seconds per system
-- **System Inventory**: ~5 seconds per system (with basic info)
-- **User Creation**: ~3 seconds (without template)
-- **Parallel Execution**: Scales linearly to 10 concurrent operations
-
-### Resource Usage
-
-- **Memory**: ~50MB base + ~10MB per concurrent operation
-- **CPU**: Minimal during steady state, spikes during WMI queries
-- **Network**: ~1KB per system for health checks, ~50KB for full inventory
-
-## Troubleshooting
-
-### Common Issues
-
-**Module Import Errors**:
-```powershell
-# Ensure PowerShell 7+ is installed
-pwsh --version
-
-# Check execution policy
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-**Permission Errors**:
-```powershell
-# Verify you have required permissions
-# Check security/SecurityBoundaries.md for specific requirements
-```
-
-**Idempotency State Issues**:
-```powershell
-# Clear idempotency state if needed
-Remove-Item "C:\AutomationState\*" -Recurse -Force
-```
+- No rollback framework, and no `Undo-` functions.
+- Pester suite is unmockable, so it does not run in CI.
+- Schema coverage is 3 files, not one per operation.
+- The OpenAPI spec describes 23 operations.
+- No LICENSE file. Usage terms are undefined; ask before depending on it.
+- No releases, tags, or PowerShell Gallery package.
+- Performance figures are not published here because none have been measured under
+  controlled conditions.
 
 ## Roadmap
 
-### v2.1 (Planned)
-- Additional modules for remaining v1.0 scripts
-- Azure AD and Microsoft Graph integration
-- Enhanced rollback capabilities
-- Performance optimizations
+In the order that would make this a real library:
 
-### v2.2 (Planned)
-- Additional compliance frameworks (ISO 27001, PCI DSS)
-- Cloud platform modules (AWS, Azure, GCP)
-- Advanced threat detection integration
-- Mobile device management modules
-
-### v3.0 (Future)
-- REST API wrapper for HTTP access
-- GraphQL interface
-- Web UI for manual operations
-- Advanced workflow orchestration
-
-## Support and Contribution
-
-### Getting Help
-- Check `security/SecurityBoundaries.md` for permission issues
-- Review test files for usage examples
-- Enable verbose logging for debugging
-- Check observability metrics for performance issues
-
-### Contributing
-- Follow existing code patterns in modules
-- Add comprehensive Pester tests for new functions
-- Update JSON schemas for new operations
-- Document security boundaries for new modules
-- Update OpenAPI specs for new endpoints
-
-## License
-
-This automation library is provided as operational tools for MSP environments. Customize and adapt to your specific needs while maintaining security best practices and compliance requirements.
+1. Mock the AD and WMI calls so the Pester suite runs on a clean runner, then add a
+   PowerShell detection branch so CI executes it.
+2. Add a LICENSE file.
+3. Implement the rollback framework the response contract already implies.
+4. Bring schema coverage to one file per operation.
+5. Publish to the PowerShell Gallery with a real version number.
 
 ---
 
-**Version**: 2.0.0  
-**Last Updated**: 2026-06-03  
-**Maintained By**: Eudai Gestalt Integrations (EGI)  
-**Support**: dgb@workflowtech.ai
+**Maintained by:** Eudai Gestalt Integrations (EGI)
+**Contact:** dgb@workflowtech.ai
