@@ -1,0 +1,80 @@
+# Runs the Pester suite on every push and pull request.
+#
+# This lives in its own file, not in ci-standards.yml, because that one is
+# vendored from the builder kit and must not be edited here - and its stack
+# detector knows Node, Python and .NET, not PowerShell. Before this workflow
+# existed the suite had never run anywhere but a developer's machine, and the
+# README's CI section described a pipeline that did not exist.
+#
+# Tests tagged RequiresHost need a domain-joined Windows box with WinRM and
+# are excluded. Everything else mocks the remote call and runs on any pwsh.
+
+name: pester
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Same de-duplication as ci-standards.yml: one live run per branch, the newer
+# one wins. See that file for why keying on github.ref does not work.
+concurrency:
+  group: pester-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  pester:
+    # Same runner rule as the kit workflows: hosted for a public repo and for
+    # any fork PR, the egi-vps pool otherwise.
+    runs-on: >-
+      ${{ (github.event.repository.visibility == 'public'
+      || ((github.event_name == 'pull_request'
+      || github.event_name == 'pull_request_target')
+      && github.event.pull_request.head.repo.full_name != github.repository))
+      && 'ubuntu-latest'
+      || fromJSON('["self-hosted","Linux","X64"]') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          # Hosted runners ship a Pester 5; the self-hosted pool may not. Pin a
+          # floor rather than trust whatever is present, and print what ran.
+          $have = Get-Module -ListAvailable Pester | Where-Object { $_.Version -ge [version]'5.5.0' }
+          if (-not $have) {
+            Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          }
+          Import-Module Pester -MinimumVersion 5.5.0 -Force
+          "Pester $((Get-Module Pester).Version) on PowerShell $($PSVersionTable.PSVersion)"
+
+      - name: Run the suite
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 5.5.0 -Force
+
+          $cfg = New-PesterConfiguration
+          $cfg.Run.Path          = './tests'
+          $cfg.Run.PassThru      = $true
+          $cfg.Run.Exit          = $false
+          $cfg.Output.Verbosity  = 'Detailed'
+          $cfg.Filter.ExcludeTag = 'RequiresHost'
+          $cfg.TestResult.Enabled      = $true
+          $cfg.TestResult.OutputFormat = 'NUnitXml'
+          $cfg.TestResult.OutputPath   = 'testResults.xml'
+
+          $r = Invoke-Pester -Configuration $cfg
+
+          # A check that examined nothing must not report success. The whole
+          # reason this workflow exists is that a green badge used to mean
+          # "nothing ran".
+          if ($r.TotalCount -eq 0) {
+            Write-Host "::error::Pester discovered zero tests; refusing to report a pass."
+            exit 1
+          }
+          Write-Host "passed=$($r.PassedCount) failed=$($r.FailedCount) skipped=$($r.SkippedCount) total=$($r.TotalCount)"
+          if ($r.FailedCount -gt 0) { exit 1 }

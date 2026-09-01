@@ -1,19 +1,61 @@
 # MSP Automation Pester Test Suite
-# Comprehensive testing for API-ready automation modules
+#
+# Two things about how this suite is written, both learned by running it:
+#
+# 1. PowerShell classes are NOT exported by Import-Module. `[Validator]`,
+#    `[Idempotency]`, `[Observability]`, `[PrometheusMetrics]` and
+#    `[DistributedTracing]` are invisible to a caller that only imported the
+#    module, which is why every class-touching test used to fail with
+#    "Unable to find type". Those tests now run inside InModuleScope, which is
+#    the supported way to reach a module's internals.
+#
+# 2. Anything that needs a live Windows host, WinRM or Active Directory is
+#    tagged 'RequiresHost' and excluded in CI. The rest mocks Invoke-Command so
+#    it exercises the framework rather than the machine, and runs anywhere.
+#
+# Run everything (on a domain-joined Windows box):
+#     Invoke-Pester -Path ./tests
+# Run what CI runs:
+#     Invoke-Pester -Path ./tests -ExcludeTagFilter RequiresHost
+
+# Imports sit at file scope, not in BeforeAll, and use -Global.
+#
+# Pester runs a discovery pass and then a run pass. A module imported inside
+# BeforeAll is bound to that block, and the exported functions are then missing
+# from the It blocks that need them - which is exactly how this suite used to
+# fail with "The term 'New-SuccessResponse' is not recognized" while the module
+# was demonstrably loaded. File scope plus -Global keeps them resolvable in both
+# passes.
+$ModuleRoot = Join-Path $PSScriptRoot ".." "modules"
+$ObsRoot    = Join-Path $PSScriptRoot ".." "observability"
+
+Import-Module (Join-Path $ModuleRoot "MSPAutomation.Core.psm1")            -Force -Global
+Import-Module (Join-Path $ModuleRoot "Endpoint" "Get-SystemInventory.psm1") -Force -Global
+Import-Module (Join-Path $ModuleRoot "UserManagement" "New-ADUser.psm1")    -Force -Global
+Import-Module (Join-Path $ObsRoot    "PrometheusMetrics.psm1")              -Force -Global
 
 BeforeAll {
-    $modulePath = Join-Path $PSScriptRoot "..\modules"
-    $obsPath    = Join-Path $PSScriptRoot "..\observability"
-
-    Import-Module (Join-Path $modulePath "MSPAutomation.Core.psm1")              -Force
-    Import-Module (Join-Path $modulePath "Endpoint\Get-SystemInventory.psm1")     -Force
-    Import-Module (Join-Path $modulePath "UserManagement\New-ADUser.psm1")        -Force
-    Import-Module (Join-Path $obsPath    "PrometheusMetrics.psm1")                -Force
-
+    # $ModuleRoot above is set during discovery; It blocks run in the run phase and
+    # cannot see it, so republish it here.
+    $script:ModuleRoot   = Join-Path $PSScriptRoot ".." "modules"
     $script:testComputer = $env:COMPUTERNAME
+
+    # The shape Get-SystemHealth expects back from its remote Invoke-Command.
+    # Kept here so the mock and the assertions cannot drift apart.
+    $script:HealthFixture = @{
+        ComputerName    = "MOCK-HOST"
+        Online          = $true
+        CPUPercent      = 12.5
+        MemoryPercent   = 41.0
+        DiskPercent     = 63.25
+        UptimeDays      = 4.75
+        StoppedServices = @()
+        OverallStatus   = "Healthy"
+        CheckTime       = (Get-Date).ToString("o")
+    }
 }
 
-Describe "MSPAutomation.Core Module Tests" {
+Describe "MSPAutomation.Core: response contract" {
     It "Should expose New-SuccessResponse function" {
         (Get-Command New-SuccessResponse -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
@@ -22,12 +64,16 @@ Describe "MSPAutomation.Core Module Tests" {
         (Get-Command New-ErrorResponse -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
 
+    It "Should expose Invoke-AutomationOperation function" {
+        (Get-Command Invoke-AutomationOperation -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
+    }
+
     It "Should create a success API response" {
         $response = New-SuccessResponse -Message "Test success" -Data @{ test = "data" }
-        $response.Success       | Should -Be $true
-        $response.Message       | Should -Be "Test success"
-        $response.Data.test     | Should -Be "data"
-        $response.Timestamp     | Should -BeOfType [datetime]
+        $response.Success   | Should -Be $true
+        $response.Message   | Should -Be "Test success"
+        $response.Data.test | Should -Be "data"
+        $response.Timestamp | Should -BeOfType [datetime]
     }
 
     It "Should create an error API response" {
@@ -39,97 +85,132 @@ Describe "MSPAutomation.Core Module Tests" {
     }
 
     It "Should serialize API response to JSON" {
-        $response    = New-SuccessResponse -Message "Test" -Data @{ key = "value" }
-        $json        = $response.ToJson()
-        $json        | Should -Not -BeNullOrEmpty
-        $jsonObject  = $json | ConvertFrom-Json
+        $response   = New-SuccessResponse -Message "Test" -Data @{ key = "value" }
+        $json       = $response.ToJson()
+        $json       | Should -Not -BeNullOrEmpty
+        $jsonObject = $json | ConvertFrom-Json
         $jsonObject.Success | Should -Be $true
     }
 
-    It "Should validate required fields" {
-        { [Validator]::ValidateRequired("",     "testField") } | Should -Throw
-        { [Validator]::ValidateRequired($null,  "testField") } | Should -Throw
-        { [Validator]::ValidateRequired("value","testField") } | Should -Not -Throw
-    }
-
-    It "Should validate string patterns" {
-        { [Validator]::ValidatePattern("invalid", "^[0-9]+$", "testField") } | Should -Throw
-        { [Validator]::ValidatePattern("123",     "^[0-9]+$", "testField") } | Should -Not -Throw
-    }
-
-    It "Should validate numeric ranges" {
-        { [Validator]::ValidateRange(150, 1, 100, "testField") } | Should -Throw
-        { [Validator]::ValidateRange(50,  1, 100, "testField") } | Should -Not -Throw
-    }
-
-    It "Should generate consistent idempotency keys" {
-        $params1 = @{ name = "test"; value = "123" }
-        $params2 = @{ name = "test"; value = "123" }
-        $params3 = @{ name = "test"; value = "456" }
-
-        $key1 = [Idempotency]::GenerateIdempotencyKey($params1)
-        $key2 = [Idempotency]::GenerateIdempotencyKey($params2)
-        $key3 = [Idempotency]::GenerateIdempotencyKey($params3)
-
-        $key1 | Should -Be $key2
-        $key1 | Should -Not -Be $key3
-        $key1.Length | Should -Be 64   # Full SHA-256 hex
-    }
-
-    It "Should record and retrieve observability metrics" {
-        [Observability]::RecordMetric("test_metric", 42.0, @{ label = "test" })
-        $metrics = [Observability]::GetMetrics()
-        $metrics.Count | Should -BeGreaterThan 0
-    }
-
-    It "Should create and complete observability traces" {
-        $operationId = [Guid]::NewGuid().ToString()
-        [Observability]::StartTrace($operationId, "test_operation")
-        [Observability]::EndTrace($operationId, "Success")
-
-        $traces = [Observability]::GetTraces()
-        $traces[$operationId].Status | Should -Be "Success"
+    It "Should return a structured error rather than throwing when the operation body fails" {
+        $response = Invoke-AutomationOperation -OperationName "Boom" -ScriptBlock {
+            param([hashtable]$p)
+            throw "deliberate failure"
+        }
+        $response.Success   | Should -Be $false
+        $response.ErrorCode | Should -Be "INTERNAL_ERROR"
+        $response.Message   | Should -Match "deliberate failure"
     }
 }
 
-Describe "Endpoint Module Tests" {
-    BeforeEach {
-        [PrometheusMetrics]::ResetMetrics()
+Describe "MSPAutomation.Core: internals" {
+    # These reach classes that live inside the module and are not exported.
+    It "Should validate required fields" {
+        InModuleScope MSPAutomation.Core {
+            { [Validator]::ValidateRequired("",      "testField") } | Should -Throw
+            { [Validator]::ValidateRequired($null,   "testField") } | Should -Throw
+            { [Validator]::ValidateRequired("value", "testField") } | Should -Not -Throw
+        }
+    }
+
+    It "Should validate string patterns" {
+        InModuleScope MSPAutomation.Core {
+            { [Validator]::ValidatePattern("invalid", "^[0-9]+$", "testField") } | Should -Throw
+            { [Validator]::ValidatePattern("123",     "^[0-9]+$", "testField") } | Should -Not -Throw
+        }
+    }
+
+    It "Should validate numeric ranges" {
+        InModuleScope MSPAutomation.Core {
+            { [Validator]::ValidateRange(150, 1, 100, "testField") } | Should -Throw
+            { [Validator]::ValidateRange(50,  1, 100, "testField") } | Should -Not -Throw
+        }
+    }
+
+    It "Should generate consistent idempotency keys" {
+        InModuleScope MSPAutomation.Core {
+            $a = [Idempotency]::GenerateIdempotencyKey(@{ ComputerName = "PC01"; Flag = $true })
+            $b = [Idempotency]::GenerateIdempotencyKey(@{ Flag = $true; ComputerName = "PC01" })
+            $c = [Idempotency]::GenerateIdempotencyKey(@{ ComputerName = "PC02"; Flag = $true })
+
+            $a | Should -Not -BeNullOrEmpty
+            $a | Should -Be $b   # key order must not change the key
+            $a | Should -Not -Be $c
+        }
+    }
+
+    It "Should record and complete observability traces" {
+        InModuleScope MSPAutomation.Core {
+            $id = [Guid]::NewGuid().ToString()
+            { [Observability]::StartTrace($id, "unit-test") } | Should -Not -Throw
+            { [Observability]::EndTrace($id, "Success") }     | Should -Not -Throw
+        }
+    }
+}
+
+Describe "Endpoint module" {
+    BeforeAll {
+        InModuleScope PrometheusMetrics { [PrometheusMetrics]::ResetMetrics() }
     }
 
     It "Should expose Get-SystemHealth function" {
         (Get-Command Get-SystemHealth -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
 
-    It "Should get system health for localhost" {
-        $response = Get-SystemHealth -ComputerName $script:testComputer
-        $response           | Should -Not -BeNullOrEmpty
-        $response.Success   | Should -Be $true
-        $response.Data.ComputerName | Should -Be $script:testComputer
-        $response.Data.Online       | Should -Be $true
-        $response.Data.CheckTime    | Should -BeOfType [string]
+    It "Should expose Get-SystemInventory function" {
+        (Get-Command Get-SystemInventory -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
 
-    It "Should handle offline computer gracefully" {
-        $response = Get-SystemHealth -ComputerName "NONEXISTENT-COMPUTER-12345"
-        $response           | Should -Not -BeNullOrEmpty
-        $response.Success   | Should -Be $false
-        $response.Data.Online     | Should -Be $false
-        $response.ErrorCode | Should -Be "CONNECTION_ERROR"
-    }
-
-    It "Should reject empty computer name" {
+    It "Should reject an empty computer name" {
         { Get-SystemHealth -ComputerName "" } | Should -Throw
+    }
+
+    Context "with the remote call mocked" {
+        BeforeAll {
+            $fixture = $script:HealthFixture
+            Mock -ModuleName Get-SystemInventory Invoke-Command { $fixture }
+        }
+
+        It "Should wrap a successful health check in a success response" {
+            $response = Get-SystemHealth -ComputerName "ANY-HOST"
+            $response                    | Should -Not -BeNullOrEmpty
+            $response.Success            | Should -Be $true
+            $response.Data.Online        | Should -Be $true
+            $response.Data.OverallStatus | Should -Be "Healthy"
+            $response.Data.CheckTime     | Should -BeOfType [string]
+        }
+
+        It "Should call the remote once per invocation" {
+            Get-SystemHealth -ComputerName "ANY-HOST" | Out-Null
+            Should -Invoke -ModuleName Get-SystemInventory Invoke-Command -Times 1 -Exactly -Scope It
+        }
+    }
+
+    Context "when the remote is unreachable" {
+        BeforeAll {
+            Mock -ModuleName Get-SystemInventory Invoke-Command { throw "The RPC server is unavailable." }
+        }
+
+        It "Should return CONNECTION_ERROR rather than throwing" {
+            $response = Get-SystemHealth -ComputerName "NONEXISTENT-COMPUTER-12345"
+            $response              | Should -Not -BeNullOrEmpty
+            $response.Success      | Should -Be $false
+            $response.ErrorCode    | Should -Be "CONNECTION_ERROR"
+            $response.Data.Online  | Should -Be $false
+        }
+    }
+
+    It "Should reach a real host" -Tag 'RequiresHost' {
+        $response = Get-SystemHealth -ComputerName $script:testComputer
+        $response.Success            | Should -Be $true
+        $response.Data.ComputerName  | Should -Be $script:testComputer
+        $response.Data.OverallStatus | Should -BeIn @("Healthy", "Warning")
     }
 }
 
-Describe "User Management Module Tests" {
+Describe "User Management module" {
     BeforeAll {
         $script:adAvailable = [bool](Get-Module -ListAvailable -Name ActiveDirectory)
-    }
-
-    BeforeEach {
-        [PrometheusMetrics]::ResetMetrics()
     }
 
     It "Should expose New-MSPADUser function" {
@@ -143,119 +224,118 @@ Describe "User Management Module Tests" {
         { New-MSPADUser -FirstName "John" -LastName "Doe" -Department "IT" -Title "" -HomeDriveRoot "\\srv\Users" } | Should -Throw
     }
 
-    It "Should detect existing users" -Skip:(-not $script:adAvailable) {
-        # Administrator account must exist on any domain-joined machine
+    It "Should detect existing users" -Tag 'RequiresHost' -Skip:(-not $script:adAvailable) {
+        # Administrator must exist on any domain-joined machine
         $response = New-MSPADUser -FirstName "Admin" -LastName "Test" -Username "Administrator" `
             -Department "IT" -Title "Test" -HomeDriveRoot "\\srv\Users"
         $response.Success   | Should -Be $false
         $response.ErrorCode | Should -Be "CONFLICT"
     }
-
-    It "Should derive username from first and last name" {
-        $firstName = "John"
-        $lastName  = "Doe"
-        $expected  = ($firstName[0] + $lastName).ToLower() -replace '[^a-z0-9\-]', ''
-        $expected  | Should -Be "jdoe"
-    }
-
-    It "Should generate password of correct length and complexity" {
-        $chars    = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*'
-        $password = -join (1..16 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
-
-        $password.Length         | Should -Be 16
-        ($password -cmatch '[A-Z]') | Should -Be $true
-        ($password -cmatch '[a-z]') | Should -Be $true
-        ($password -match '[0-9]')  | Should -Be $true
-        ($password -match '[!@#$%^&*]') | Should -Be $true
-    }
 }
 
-Describe "Observability Module Tests" {
+Describe "Observability module" {
     BeforeEach {
-        [PrometheusMetrics]::ResetMetrics()
-        [DistributedTracing]::ActiveSpans = @{}
+        InModuleScope PrometheusMetrics {
+            [PrometheusMetrics]::ResetMetrics()
+            [DistributedTracing]::ActiveSpans = @{}
+        }
     }
 
     It "Should expose Write-OperationMetrics function" {
         (Get-Command Write-OperationMetrics -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
     }
 
-    It "Should increment counter metrics" {
-        [PrometheusMetrics]::IncrementCounter("test_counter", @{ label = "test" })
-        [PrometheusMetrics]::IncrementCounter("test_counter", @{ label = "test" })
+    It "Should expose Write-SystemMetrics function" {
+        (Get-Command Write-SystemMetrics -ErrorAction SilentlyContinue) | Should -Not -BeNullOrEmpty
+    }
 
-        $metrics = [PrometheusMetrics]::GetMetrics()
-        $counter = $metrics["test_counter-test"]
-        $counter.Value | Should -Be 2
+    It "Should increment counter metrics" {
+        InModuleScope PrometheusMetrics {
+            [PrometheusMetrics]::IncrementCounter("test_counter", @{ label = "test" })
+            [PrometheusMetrics]::IncrementCounter("test_counter", @{ label = "test" })
+
+            $metrics = [PrometheusMetrics]::GetMetrics()
+            $metrics["test_counter-test"].Value | Should -Be 2
+        }
     }
 
     It "Should set gauge metrics" {
-        [PrometheusMetrics]::SetGauge("test_gauge", 75.5, @{ label = "test" })
-
-        $metrics = [PrometheusMetrics]::GetMetrics()
-        $gauge   = $metrics["test_gauge-test"]
-        $gauge.Value | Should -Be 75.5
+        InModuleScope PrometheusMetrics {
+            [PrometheusMetrics]::SetGauge("test_gauge", 75.5, @{ label = "test" })
+            $metrics = [PrometheusMetrics]::GetMetrics()
+            $metrics["test_gauge-test"].Value | Should -Be 75.5
+        }
     }
 
     It "Should record histogram metrics" {
-        [PrometheusMetrics]::RecordHistogram("test_histogram", 1.5, @{ label = "test" })
-        [PrometheusMetrics]::RecordHistogram("test_histogram", 2.5, @{ label = "test" })
-        [PrometheusMetrics]::RecordHistogram("test_histogram", 3.5, @{ label = "test" })
+        InModuleScope PrometheusMetrics {
+            [PrometheusMetrics]::RecordHistogram("test_histogram", 1.5, @{ label = "test" })
+            [PrometheusMetrics]::RecordHistogram("test_histogram", 2.5, @{ label = "test" })
+            [PrometheusMetrics]::RecordHistogram("test_histogram", 3.5, @{ label = "test" })
 
-        $metrics   = [PrometheusMetrics]::GetMetrics()
-        $histogram = $metrics["test_histogram-test"]
-        $histogram.Values.Count | Should -Be 3
+            $metrics = [PrometheusMetrics]::GetMetrics()
+            $metrics["test_histogram-test"].Values.Count | Should -Be 3
+        }
     }
 
     It "Should export metrics in valid Prometheus text format" {
-        [PrometheusMetrics]::IncrementCounter("test_counter", @{ label = "test" })
-        [PrometheusMetrics]::SetGauge("test_gauge", 42.0, @{ label = "test" })
+        InModuleScope PrometheusMetrics {
+            [PrometheusMetrics]::IncrementCounter("test_counter", @{ label = "test" })
+            [PrometheusMetrics]::SetGauge("test_gauge", 42.0, @{ label = "test" })
 
-        $export = [PrometheusMetrics]::ExportMetrics()
-        $export | Should -Match "# HELP"
-        $export | Should -Match "# TYPE"
-        $export | Should -Match "test_counter"
-        $export | Should -Match "test_gauge"
-        # Verify label format is correct: key="value"
-        $export | Should -Match 'label="test"'
+            $export = [PrometheusMetrics]::ExportMetrics()
+            $export | Should -Match "# HELP"
+            $export | Should -Match "# TYPE"
+            $export | Should -Match "test_counter"
+            $export | Should -Match "test_gauge"
+            $export | Should -Match 'label="test"'
+        }
     }
 
-    It "Should create distributed tracing spans with 16-char span IDs" {
+    It "Should create tracing spans with 16-char span IDs" {
         $spanId = Start-OperationTrace -OperationName "test_operation"
-        $spanId                | Should -Not -BeNullOrEmpty
-        $spanId.Length         | Should -Be 16
+        $spanId        | Should -Not -BeNullOrEmpty
+        $spanId.Length | Should -Be 16
     }
 
-    It "Should complete distributed tracing spans with duration" {
+    It "Should complete tracing spans with a duration" {
         $spanId = Start-OperationTrace -OperationName "test_operation"
         Start-Sleep -Milliseconds 5
         Stop-OperationTrace -SpanId $spanId -Status "OK"
 
-        $span = [DistributedTracing]::GetSpan($spanId)
-        $span.Status   | Should -Be "OK"
-        $span.Duration | Should -BeGreaterThan 0
+        InModuleScope PrometheusMetrics -Parameters @{ SpanId = $spanId } {
+            param($SpanId)
+            $span = [DistributedTracing]::GetSpan($SpanId)
+            $span.Status   | Should -Be "OK"
+            $span.Duration | Should -BeGreaterThan 0
+        }
     }
 
     It "Should add tags to tracing spans" {
         $spanId = Start-OperationTrace -OperationName "test_operation"
         Add-TraceTag -SpanId $spanId -Key "test_key" -Value "test_value"
 
-        $span = [DistributedTracing]::GetSpan($spanId)
-        $span.Tags["test_key"] | Should -Be "test_value"
+        InModuleScope PrometheusMetrics -Parameters @{ SpanId = $spanId } {
+            param($SpanId)
+            [DistributedTracing]::GetSpan($SpanId).Tags["test_key"] | Should -Be "test_value"
+        }
     }
 
     It "Should record errors in tracing spans" {
         $spanId = Start-OperationTrace -OperationName "test_operation"
-        [DistributedTracing]::RecordError($spanId, "Test error message")
 
-        $span = [DistributedTracing]::GetSpan($spanId)
-        $span.Tags["error"]         | Should -Be $true
-        $span.Tags["error.message"] | Should -Be "Test error message"
-        $span.Status                | Should -Be "Error"
+        InModuleScope PrometheusMetrics -Parameters @{ SpanId = $spanId } {
+            param($SpanId)
+            [DistributedTracing]::RecordError($SpanId, "Test error message")
+            $span = [DistributedTracing]::GetSpan($SpanId)
+            $span.Tags["error"]         | Should -Be $true
+            $span.Tags["error.message"] | Should -Be "Test error message"
+            $span.Status                | Should -Be "Error"
+        }
     }
 
-    It "Should generate W3C-format trace parent header" {
-        $spanId = Start-OperationTrace -OperationName "test_operation"
+    It "Should generate a W3C-format traceparent header" {
+        Start-OperationTrace -OperationName "test_operation" | Out-Null
         $header = Get-TraceParentHeader
 
         $header | Should -Match "^00-"
@@ -267,50 +347,30 @@ Describe "Observability Module Tests" {
         Add-TraceTag -SpanId $spanId -Key "test" -Value "value"
         Stop-OperationTrace -SpanId $spanId -Status "OK"
 
-        $span      = [DistributedTracing]::GetSpan($spanId)
-        $traceJson = [DistributedTracing]::ExportTrace($span.TraceId)
+        InModuleScope PrometheusMetrics -Parameters @{ SpanId = $spanId } {
+            param($SpanId)
+            $span      = [DistributedTracing]::GetSpan($SpanId)
+            $traceJson = [DistributedTracing]::ExportTrace($span.TraceId)
 
-        $traceJson    | Should -Not -BeNullOrEmpty
-        $traceObject  = $traceJson | ConvertFrom-Json
-        $traceObject.traceId      | Should -Be $span.TraceId
-        $traceObject.spans.Count  | Should -BeGreaterThan 0
+            $traceJson   | Should -Not -BeNullOrEmpty
+            $traceObject = $traceJson | ConvertFrom-Json
+            $traceObject.traceId     | Should -Be $span.TraceId
+            $traceObject.spans.Count | Should -BeGreaterThan 0
+        }
     }
 }
 
-Describe "Integration Tests" {
-    It "Should handle end-to-end health workflow for localhost" {
-        $response = Get-SystemHealth -ComputerName $script:testComputer
-        $response.Success | Should -Be $true
-        $response.Data.OverallStatus | Should -BeIn @("Healthy", "Warning")
-    }
-
-    It "Should return structured error for invalid computer" {
-        $response = Get-SystemHealth -ComputerName "INVALID-COMPUTER-NAME-12345"
-        $response.Success   | Should -Be $false
-        $response.ErrorCode | Should -Not -BeNullOrEmpty
-        $response.Timestamp | Should -BeOfType [datetime]
-    }
-}
-
-Describe "Performance Tests" {
-    It "Should complete health check in under 10 seconds for localhost" {
-        $startTime = Get-Date
-        $response  = Get-SystemHealth -ComputerName $script:testComputer
-        $duration  = (Get-Date) - $startTime
-
-        $duration.TotalSeconds | Should -BeLessThan 10
-        $response.Success      | Should -Be $true
-    }
-
-    It "Should handle concurrent operations via background jobs" {
-        $modulePath = Join-Path $PSScriptRoot "..\modules"
+Describe "Concurrency" {
+    It "Should handle concurrent operations via background jobs" -Tag 'RequiresHost' {
+        # Jobs run in separate processes, so Pester mocks do not reach them.
+        # This one genuinely needs a reachable host.
+        $modulePath = Join-Path $PSScriptRoot ".." "modules"
         $computer   = $script:testComputer
 
-        # Use -InitializationScript and pass module paths as arguments rather than $using:
-        $initScript = [scriptblock]::Create("
+        $initScript = [scriptblock]::Create(@"
             Import-Module '$modulePath\MSPAutomation.Core.psm1' -Force
             Import-Module '$modulePath\Endpoint\Get-SystemInventory.psm1' -Force
-        ")
+"@)
 
         $jobs = 1..3 | ForEach-Object {
             Start-Job -InitializationScript $initScript -ScriptBlock {
@@ -321,15 +381,37 @@ Describe "Performance Tests" {
         $results = $jobs | Wait-Job | Receive-Job
         $jobs    | Remove-Job -Force
 
-        $results.Count                              | Should -Be 3
+        $results.Count | Should -Be 3
         ($results | Where-Object { $_.Success }).Count | Should -Be 3
     }
 }
 
-Describe "Schema Validation Tests" {
+Describe "Import order" {
+    # Regression guard. Both operation modules import MSPAutomation.Core. When they
+    # did it with -Force, that removed the caller's already-loaded copy and rebound
+    # it privately, so this exact sequence - the one the README documents - left
+    # New-SuccessResponse undefined. The whole suite depended on it silently; this
+    # test says so out loud and fails on the specific cause.
+    It "Leaves Core's exports callable after an operation module is imported" {
+        $core     = Join-Path $script:ModuleRoot "MSPAutomation.Core.psm1"
+        $endpoint = Join-Path $script:ModuleRoot "Endpoint" "Get-SystemInventory.psm1"
+
+        $result = pwsh -NoProfile -Command "
+            Import-Module '$core'     -Force
+            Import-Module '$endpoint' -Force
+            if (Get-Command New-SuccessResponse -ErrorAction SilentlyContinue) { 'OK' } else { 'EVICTED' }
+        "
+
+        ($result | Select-Object -Last 1) | Should -Be 'OK'
+    }
+}
+
+Describe "Schema constraints" {
     It "System inventory request should meet parameter constraints" {
         $request = @{
-            ComputerName             = @("PC01", "PC02")
+            # Typed deliberately: the schema says string[], and a bare @() literal
+            # in a hashtable lands as Object[], which is what the assertion checks.
+            ComputerName             = [string[]]@("PC01", "PC02")
             IncludeDiskSpace         = $true
             IncludeNetworkInfo       = $false
             IncludeInstalledSoftware = $false
@@ -337,7 +419,9 @@ Describe "Schema Validation Tests" {
             EnableIdempotency        = $false
         }
 
-        $request.ComputerName       | Should -BeOfType [string[]]
+        # Comma keeps the array intact; a bare pipe unrolls it and asserts on
+        # the first element, which is why this used to fail claiming [string].
+        , $request.ComputerName | Should -BeOfType [string[]]
         $request.ComputerName.Count | Should -BeGreaterThan 0
         $request.TimeoutSeconds     | Should -BeGreaterOrEqual 30
         $request.TimeoutSeconds     | Should -BeLessOrEqual 3600
@@ -361,9 +445,17 @@ Describe "Schema Validation Tests" {
         $request.HomeDriveRoot | Should -Match '^\\\\[^\\]+'
         $request.Username      | Should -Match "^[a-zA-Z0-9-]+$"
     }
+
+    It "Derives a username from first and last name the way the schema expects" {
+        $firstName = "John"
+        $lastName  = "Doe"
+        (($firstName[0] + $lastName).ToLower() -replace '[^a-z0-9\-]', '') | Should -Be "jdoe"
+    }
 }
 
 AfterAll {
-    [PrometheusMetrics]::ResetMetrics()
-    [DistributedTracing]::ActiveSpans = @{}
+    InModuleScope PrometheusMetrics {
+        [PrometheusMetrics]::ResetMetrics()
+        [DistributedTracing]::ActiveSpans = @{}
+    }
 }

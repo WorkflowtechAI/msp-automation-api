@@ -10,8 +10,8 @@ tracing surface, and schema contracts.
 
 **What it is not:** a published, versioned, production-deployed library. There are no
 releases, no tags, no PowerShell Gallery package, and no users besides its author. The
-Pester suite does not run in CI (see [Testing](#testing) for why). Treat this as a worked
-example of the pattern, not as a dependency.
+Pester suite runs in CI on every push and pull request (see [Testing](#testing)). Treat
+this as a worked example of the pattern, not as a dependency.
 
 The pattern is the point. The code demonstrates it on a handful of real operations.
 
@@ -31,9 +31,9 @@ README.
 | Distributed tracing, W3C `traceparent` format | **Implemented**, hand-rolled. Not an OpenTelemetry SDK integration. |
 | JSON Schema contracts | **Partial.** Three schemas, not one per operation. |
 | OpenAPI specification | **Partial.** 23 operations described. |
-| Pester test suite | **Written, but not run in CI.** No mocking; needs a live host and AD. |
+| Pester test suite | **Implemented and run in CI.** The remote call is mocked; the few tests that need a domain-joined host are tagged `RequiresHost` and excluded there. |
 | Rollback | **Not implemented.** Design goal only. See [Rollback](#rollback). |
-| CI/CD pipeline | **Standards and secret scanning only.** No Pester run, no packaging, no deploy. |
+| CI/CD pipeline | **Standards, secret scanning, and the Pester run.** No packaging, no deploy. |
 
 ## Architecture
 
@@ -55,7 +55,8 @@ msp-automation-api/
 ├── config/                       MSPConfig.psd1
 ├── tests/                        MSPAutomation.Tests.ps1
 ├── docs/
-└── .github/workflows/            ci-standards, claude-review, secret-scan
+└── .github/workflows/            pester (this repo's), plus vendored
+                                  ci-standards, claude-review, secret-scan
 ```
 
 The `backup-recovery/`, `compliance/`, `endpoint-inventory/`, `m365-azure/`,
@@ -230,32 +231,55 @@ if ($securityContext.HasPermission("CreateUser")) {
 
 ## Testing
 
+What CI runs, on any machine with PowerShell 7 and Pester 5+:
+
 ```powershell
-Import-Module Pester -MinimumVersion 5.3.0
-Invoke-Pester -Path ./tests/MSPAutomation.Tests.ps1 -Verbose
+Invoke-Pester -Path ./tests -ExcludeTagFilter RequiresHost
 ```
 
-**The suite does not run in CI, and this is the honest reason:** it uses no mocking. It
-resolves `$env:COMPUTERNAME` and probes for the ActiveDirectory module, so it needs a real
-Windows host in a real domain. A clean CI runner has neither, so wiring it into a workflow
-today would produce a red build that says nothing about the code.
+Everything, on a domain-joined Windows host with WinRM:
 
-Fixing it means mocking the AD and WMI calls so the suite tests the framework rather than
-the host. That work has not been done.
+```powershell
+Invoke-Pester -Path ./tests
+```
+
+The remote call inside `Get-SystemHealth` is a single `Invoke-Command`, and the suite
+mocks that one call, so the framework is exercised without touching WMI, WinRM or the
+host. Tests that genuinely need a real machine (a live health check, AD user detection,
+concurrent background jobs, which run in separate processes that mocks cannot reach) are
+tagged `RequiresHost` and excluded in CI.
+
+**An honest note on history.** An earlier README said the suite "does not run in CI
+because it is unmockable." That was half the story. Run on a Windows host, it passed 2
+tests and failed 34, for two reasons that had nothing to do with mocking:
+
+1. PowerShell classes are not exported by `Import-Module`. Every test that touched
+   `[Validator]`, `[Idempotency]`, `[Observability]` or `[PrometheusMetrics]` failed with
+   "Unable to find type". Those tests now run inside `InModuleScope`, which is the
+   supported way to reach a module's internals.
+2. Both operation modules imported `MSPAutomation.Core` with `-Force`, which removes an
+   already-loaded copy and rebinds it privately. A caller who imported Core first, then a
+   module, then called `New-SuccessResponse` — the exact sequence this README documents —
+   got "not recognized." That was a bug in the library, not the tests. The `-Force` is
+   gone, and a regression test runs that sequence in a fresh process and fails if Core's
+   exports are ever evicted again.
+
+The suite had never passed, anywhere, before those two fixes.
 
 ## CI
 
-`.github/workflows/` contains three workflows, all vendored from the builder kit:
+`.github/workflows/` contains four workflows:
 
-| Workflow | What it does |
-|---|---|
-| `ci-standards.yml` | Standards-drift check and header/secret-hygiene tests |
-| `claude-review.yml` | Automated review on pull requests |
-| `secret-scan.yml` | Secret scanning |
+| Workflow | Owned by | What it does |
+|---|---|---|
+| `pester.yml` | this repo | Runs the Pester suite with `RequiresHost` excluded, on every push and PR. Fails if zero tests are discovered, so a green badge cannot mean "nothing ran." |
+| `ci-standards.yml` | builder kit | Standards-drift check and header/secret-hygiene tests |
+| `claude-review.yml` | builder kit | Automated review on pull requests |
+| `secret-scan.yml` | builder kit | Secret scanning |
 
-`ci-standards.yml` detects Node, Python and .NET projects. **It does not detect
-PowerShell**, so no Pester step runs. There is no packaging step, no Trivy scan, no
-deployment stage and no notification integration.
+`ci-standards.yml` is vendored and not edited here. Its stack detector knows Node, Python
+and .NET, not PowerShell, which is why the Pester run lives in its own file. There is no
+packaging step, no Trivy scan, no deployment stage and no notification integration.
 
 ## Configuration
 
@@ -289,7 +313,7 @@ $env:MSP_LOG_LEVEL   = "Info"
 | Error handling | try/catch | Standardized error codes |
 | Idempotency | Manual | Built in |
 | Observability | File logging | Prometheus + W3C tracing |
-| Testing | Manual | Pester suite (not yet in CI) |
+| Testing | Manual | Pester suite, run in CI |
 | Documentation | Comment-based | Schema + OpenAPI, partial coverage |
 
 The v1 scripts remain in the root directories. The rewrite covers a subset of them.
@@ -299,7 +323,6 @@ The v1 scripts remain in the root directories. The rewrite covers a subset of th
 Listed so nobody has to discover them by reading the source:
 
 - No rollback framework, and no `Undo-` functions.
-- Pester suite is unmockable, so it does not run in CI.
 - Schema coverage is 3 files, not one per operation.
 - The OpenAPI spec describes 23 operations.
 - No LICENSE file. Usage terms are undefined; ask before depending on it.
@@ -311,12 +334,10 @@ Listed so nobody has to discover them by reading the source:
 
 In the order that would make this a real library:
 
-1. Mock the AD and WMI calls so the Pester suite runs on a clean runner, then add a
-   PowerShell detection branch so CI executes it.
-2. Add a LICENSE file.
-3. Implement the rollback framework the response contract already implies.
-4. Bring schema coverage to one file per operation.
-5. Publish to the PowerShell Gallery with a real version number.
+1. Add a LICENSE file.
+2. Implement the rollback framework the response contract already implies.
+3. Bring schema coverage to one file per operation.
+4. Publish to the PowerShell Gallery with a real version number.
 
 ---
 
