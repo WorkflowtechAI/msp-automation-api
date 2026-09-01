@@ -1,7 +1,9 @@
 # User Management Module
 # API-ready user onboarding with rollback support
 
-Import-Module (Join-Path $PSScriptRoot "..\MSPAutomation.Core.psm1") -Force
+# No -Force. See the note in Endpoint\Get-SystemInventory.psm1: forcing the
+# nested import evicts the caller's copy of MSPAutomation.Core.
+Import-Module (Join-Path $PSScriptRoot "..\MSPAutomation.Core.psm1")
 
 <#
 .SYNOPSIS

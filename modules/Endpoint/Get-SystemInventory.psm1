@@ -1,7 +1,12 @@
 # System Inventory Module
 # API-ready endpoint for system inventory operations
 
-Import-Module (Join-Path $PSScriptRoot "..\MSPAutomation.Core.psm1") -Force
+# No -Force here on purpose. -Force removes an already-loaded MSPAutomation.Core
+# and re-imports it into THIS module's scope, so a caller who imported Core first
+# silently loses New-SuccessResponse and friends. That is the exact sequence the
+# README's quick start documents. Plain Import-Module is a no-op when the module
+# is already loaded and loads it when it is not, which is what we want.
+Import-Module (Join-Path $PSScriptRoot "..\MSPAutomation.Core.psm1")
 
 <#
 .SYNOPSIS
