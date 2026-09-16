@@ -1,0 +1,149 @@
+{
+  "_comment": "Data-driven findings rules. Adding a new audit means adding an entry here, not writing code. Each rule tests one column of one audit's rows and raises a finding when it matches. Severity drives ordering and colour in the report; 'impact' and 'remediation' are what the client actually reads, so they are written for an owner rather than an engineer.",
+
+  "Get-MFAStatusReport": {
+    "title": "Multi-factor authentication coverage",
+    "idColumn": "UPN",
+    "nameColumn": "DisplayName",
+    "rules": [
+      {
+        "when": { "column": "MFAEnabled", "equals": "False" },
+        "and": { "column": "Enabled", "equals": "True" },
+        "severity": "high",
+        "finding": "Active account with no MFA",
+        "impact": "A stolen or guessed password is enough to sign in as this person. This is the single most common way business email compromise starts.",
+        "remediation": "Enrol the account in MFA, or bring it under a Conditional Access policy that requires MFA for all sign-ins."
+      },
+      {
+        "when": { "column": "MFAEnabled", "equals": "ERROR" },
+        "severity": "medium",
+        "finding": "MFA status could not be read",
+        "impact": "The account could not be checked, so its exposure is unknown rather than confirmed safe.",
+        "remediation": "Re-run the audit against this account with sufficient directory permissions, and treat it as unprotected until confirmed otherwise."
+      }
+    ],
+    "summaryMetric": { "column": "MFAEnabled", "goodValue": "True", "label": "accounts with MFA enabled" }
+  },
+
+  "Get-LocalAdminAudit": {
+    "title": "Local administrator rights",
+    "idColumn": "Account",
+    "nameColumn": "Computer",
+    "rules": [
+      {
+        "when": { "column": "IsBuiltIn", "equals": "False" },
+        "severity": "high",
+        "finding": "Non-standard account holds local administrator rights",
+        "impact": "Anyone using this account can install software, disable security tooling and reach data across the machine. Malware inherits the same rights.",
+        "remediation": "Remove the account from the local Administrators group and grant elevation only for the specific tasks that need it."
+      }
+    ]
+  },
+
+  "Get-InactiveUsers": {
+    "title": "Dormant accounts",
+    "idColumn": "SamAccountName",
+    "nameColumn": "Name",
+    "rules": [
+      {
+        "_comment": "Tests DaysInactive itself rather than trusting the collecting script to have filtered. A rule that depends on upstream filtering reports whatever it is handed, so pointing it at an unfiltered export would flag every active user as dormant. Caught exactly that way against sample data.",
+        "when": { "column": "DaysInactive", "greaterThan": "90" },
+        "and": { "column": "Enabled", "equals": "True" },
+        "severity": "high",
+        "finding": "Enabled account with no recent sign-in",
+        "impact": "An account nobody is watching is an account nobody notices being used. Dormant credentials are a preferred route in because the real owner never reports anything odd.",
+        "remediation": "Disable the account. If the person has left, complete offboarding so licences are reclaimed as well."
+      }
+    ]
+  },
+
+  "Get-PasswordExpiryReport": {
+    "title": "Password expiry",
+    "idColumn": "SamAccountName",
+    "nameColumn": "Name",
+    "rules": [
+      {
+        "when": { "column": "PasswordNeverExpires", "equals": "True" },
+        "severity": "medium",
+        "finding": "Password set never to expire",
+        "impact": "A password that has not changed in years is far more likely to appear in a breach dump that attackers already hold.",
+        "remediation": "Remove the never-expires flag, or move the account to a policy with a passphrase requirement and MFA."
+      }
+    ]
+  },
+
+  "Get-BitLockerStatus": {
+    "title": "Disk encryption",
+    "idColumn": "ComputerName",
+    "nameColumn": "ComputerName",
+    "rules": [
+      {
+        "when": { "column": "ProtectionStatus", "equals": "Off" },
+        "severity": "high",
+        "finding": "Unencrypted disk",
+        "impact": "If the device is lost or stolen, every file on it can be read by removing the drive. For most regulated data this alone is a reportable breach.",
+        "remediation": "Enable BitLocker and confirm the recovery key escrows to Entra ID or Active Directory."
+      }
+    ]
+  },
+
+  "Get-SharedMailboxAccess": {
+    "title": "Shared mailbox delegation",
+    "idColumn": "Mailbox",
+    "nameColumn": "Mailbox",
+    "rules": [
+      {
+        "when": { "column": "AccessRights", "contains": "FullAccess" },
+        "severity": "medium",
+        "finding": "Full mailbox access granted",
+        "impact": "The delegate can read everything in the mailbox and send as its owner. Reviewing these matters most after someone changes role or leaves.",
+        "remediation": "Confirm each delegation is still required and remove the ones that are not."
+      }
+    ]
+  },
+
+  "Get-WindowsUpdateStatus": {
+    "title": "Patch status",
+    "idColumn": "ComputerName",
+    "nameColumn": "ComputerName",
+    "rules": [
+      {
+        "when": { "column": "PendingUpdates", "greaterThan": "0" },
+        "severity": "medium",
+        "finding": "Missing security updates",
+        "impact": "Published vulnerabilities have working exploit code within days. An unpatched machine is exploitable with tools anyone can download.",
+        "remediation": "Apply pending updates and confirm the machine reports back to your patching tool afterwards."
+      }
+    ]
+  },
+
+  "Get-DiskSpaceAlert": {
+    "title": "Disk capacity",
+    "idColumn": "ComputerName",
+    "nameColumn": "ComputerName",
+    "rules": [
+      {
+        "when": { "column": "PercentFree", "lessThan": "10" },
+        "severity": "medium",
+        "finding": "Disk nearly full",
+        "impact": "Servers below ten percent free start failing in ways that look like unrelated application faults, and backups are usually the first thing to stop silently.",
+        "remediation": "Reclaim space or extend the volume, then confirm the most recent backup actually completed."
+      }
+    ]
+  },
+
+  "Get-FailedLogins": {
+    "title": "Failed sign-in activity",
+    "idColumn": "Account",
+    "nameColumn": "Account",
+    "rules": [
+      {
+        "when": { "column": "FailureCount", "greaterThan": "25" },
+        "severity": "high",
+        "finding": "High volume of failed sign-ins",
+        "impact": "Sustained failures against one account is what a password-guessing attempt looks like. If it later succeeds, nothing in the logs will flag the success.",
+        "remediation": "Confirm whether the source is a person or an automated attempt, reset the credential, and require MFA on the account."
+      }
+    ]
+  }
+}

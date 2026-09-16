@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contoso Ltd — IT Audit</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f6f6f4;color:#1c1d1f;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:52rem;margin:0 auto;padding:0 20px 5rem}
+header{padding:3rem 0 1.6rem;border-bottom:2px solid #1c1d1f}
+.client{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:#6b6f73;margin:0 0 .5rem}
+h1{font-size:2rem;margin:0 0 .6rem;font-weight:600;letter-spacing:-.01em}
+.headline{font-size:1.1rem;color:#43474b;margin:0}
+.scoreboard{display:flex;gap:.8rem;flex-wrap:wrap;margin:2rem 0}
+.tile{flex:1 1 8rem;background:#fff;border:1px solid #e0dedb;border-radius:4px;padding:1rem}
+.tile .n{font-size:2rem;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.tile .l{font-size:.76rem;letter-spacing:.08em;text-transform:uppercase;color:#6b6f73;margin-top:.35rem}
+.tile.high .n{color:#a32a15}.tile.medium .n{color:#9a6508}.tile.ok .n{color:#2c6b48}
+h2{font-size:1.28rem;margin:2.6rem 0 .3rem;font-weight:600}
+.pop{font-size:.85rem;color:#6b6f73;margin:0 0 1rem;font-variant-numeric:tabular-nums}
+.finding{background:#fff;border:1px solid #e0dedb;border-left:4px solid #b9b6b1;border-radius:3px;padding:1rem 1.1rem;margin-bottom:.8rem}
+.finding.high{border-left-color:#a32a15}
+.finding.medium{border-left-color:#9a6508}
+.sev{display:inline-block;font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:.16em .5em;border-radius:2px;vertical-align:.14em}
+.sev.high{background:#f7ded8;color:#a32a15}
+.sev.medium{background:#faedd4;color:#7d5206}
+.sev.low{background:#e7e5e2;color:#5b5f63}
+.fname{font-weight:600;margin-left:.5rem}
+.subjects{margin:.7rem 0 0;font-size:.9rem}
+.subjects ul{margin:.3rem 0 0;padding-left:1.2rem;columns:2;column-gap:2rem}
+@media(max-width:560px){.subjects ul{columns:1}}
+.subjects li{margin:.12rem 0}
+.meta{margin-top:.7rem;font-size:.9rem;color:#43474b}
+.meta b{color:#1c1d1f}
+.clear{background:#fff;border:1px solid #e0dedb;border-left:4px solid #2c6b48;border-radius:3px;padding:.9rem 1.1rem;color:#43474b;font-size:.94rem}
+footer{margin-top:3.5rem;padding-top:1.2rem;border-top:1px solid #d9d6d2;font-size:.8rem;color:#6b6f73}
+@media print{body{background:#fff}.page{max-width:none}.finding,.tile,.clear{break-inside:avoid}}
+</style></head><body><div class="page">
+<header>
+<p class="client">Contoso Ltd</p>
+<h1>IT Security and Health Audit</h1>
+<p class="headline">9 issues need attention now, out of 23 items checked across 4 areas.</p>
+</header>
+<div class="scoreboard">
+<div class="tile high"><div class="n">9</div><div class="l">Act now</div></div>
+<div class="tile medium"><div class="n">3</div><div class="l">Schedule</div></div>
+<div class="tile"><div class="n">23</div><div class="l">Items checked</div></div>
+<div class="tile"><div class="n">4</div><div class="l">Areas covered</div></div>
+</div>
+<h2>Multi-factor authentication coverage</h2>
+<p class='pop'>5 findings across 10 items checked.</p>
+<div class='finding high'>
+<span class='sev high'>high</span><span class='fname'>Active account with no MFA &middot; 4</span>
+<div class='meta'><b>Why it matters.</b> A stolen or guessed password is enough to sign in as this person. This is the single most common way business email compromise starts.</div>
+<div class='meta'><b>What to do.</b> Enrol the account in MFA, or bring it under a Conditional Access policy that requires MFA for all sign-ins.</div>
+<div class='subjects'><b>Affected:</b><ul>
+<li>Dana Whitfield &#183; dana.whitfield@contoso.com</li>
+<li>Helen Asante &#183; helen.asante@contoso.com</li>
+<li>svc-backup &#183; svc-backup@contoso.com</li>
+<li>Tom Bek &#183; tom.bek@contoso.com</li>
+</ul></div></div>
+<div class='finding medium'>
+<span class='sev medium'>medium</span><span class='fname'>MFA status could not be read &middot; 1</span>
+<div class='meta'><b>Why it matters.</b> The account could not be checked, so its exposure is unknown rather than confirmed safe.</div>
+<div class='meta'><b>What to do.</b> Re-run the audit against this account with sufficient directory permissions, and treat it as unprotected until confirmed otherwise.</div>
+<div class='subjects'><b>Affected:</b><ul>
+<li>Ken Vasquez &#183; ken.v@contoso.com</li>
+</ul></div></div>
+<h2>Dormant accounts</h2>
+<p class='pop'>3 findings across 4 items checked.</p>
+<div class='finding high'>
+<span class='sev high'>high</span><span class='fname'>Enabled account with no recent sign-in &middot; 3</span>
+<div class='meta'><b>Why it matters.</b> An account nobody is watching is an account nobody notices being used. Dormant credentials are a preferred route in because the real owner never reports anything odd.</div>
+<div class='meta'><b>What to do.</b> Disable the account. If the person has left, complete offboarding so licences are reclaimed as well.</div>
+<div class='subjects'><b>Affected:</b><ul>
+<li>Former Contractor 01 &#183; contract01</li>
+<li>Gregor Halvorsen &#183; ghalvorsen</li>
+<li>Nina Castellanos &#183; ncastellanos</li>
+</ul></div></div>
+<h2>Disk encryption</h2>
+<p class='pop'>2 findings across 6 items checked.</p>
+<div class='finding high'>
+<span class='sev high'>high</span><span class='fname'>Unencrypted disk &middot; 2</span>
+<div class='meta'><b>Why it matters.</b> If the device is lost or stolen, every file on it can be read by removing the drive. For most regulated data this alone is a reportable breach.</div>
+<div class='meta'><b>What to do.</b> Enable BitLocker and confirm the recovery key escrows to Entra ID or Active Directory.</div>
+<div class='subjects'><b>Affected:</b><ul>
+<li>CTS-LT-0143</li>
+<li>CTS-WS-0022</li>
+</ul></div></div>
+<h2>Disk capacity</h2>
+<p class='pop'>2 findings across 3 items checked.</p>
+<div class='finding medium'>
+<span class='sev medium'>medium</span><span class='fname'>Disk nearly full &middot; 2</span>
+<div class='meta'><b>Why it matters.</b> Servers below ten percent free start failing in ways that look like unrelated application faults, and backups are usually the first thing to stop silently.</div>
+<div class='meta'><b>What to do.</b> Reclaim space or extend the volume, then confirm the most recent backup actually completed.</div>
+<div class='subjects'><b>Affected:</b><ul>
+<li>CTS-SRV-APP02</li>
+<li>CTS-SRV-FILE01</li>
+</ul></div></div>
+<footer>
+Generated 16 September 2026 by Eudai Gestalt Integrations. Source data: Get-BitLockerStatus.csv (6 rows), Get-DiskSpaceAlert.csv (3 rows), Get-InactiveUsers.csv (4 rows), Get-MFAStatusReport.csv (10 rows).<br>
+Every section states the number of items checked. A section reporting nothing means the rules found nothing in that population, not that the area was skipped.
+</footer></div></body></html>
+
