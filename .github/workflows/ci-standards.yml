@@ -210,33 +210,65 @@ jobs:
           # errors at fixture setup and this floor can never pass, making it noise
           # instead of a trust signal. Extras are no-ops where a repo has none.
           if [ -f uv.lock ]; then uv sync --frozen --all-extras; else uv sync --all-extras; fi
+          # THE WHOLE TREE COMPILES, ON EVERY PATH. compileall byte-compiles
+          # without importing or running app init, so it needs none of the
+          # private submodules / secrets / fixtures a repo's own CI provisions —
+          # it just catches SyntaxErrors.
+          #
+          # This ran on the build-only path alone, and the loose-Python floor
+          # below steps aside once a pyproject.toml exists. So a uv repo's files
+          # that no test imports (tools, one-off scripts) were compiled by
+          # nothing.
+          #
+          # The exclusions match whole path segments: /\.git/ skips the .git
+          # directory and nothing else. The loose floor's unanchored \.git also
+          # matched .github/, so capaz's vendored .github/scripts were compiled
+          # by nothing both before and after capaz gained a pyproject.toml.
+          # Replaying that floor on 2f0eea9, the tree main run 36076445394
+          # built, exits 0 and writes 0 .pyc files. This step compiles them.
+          uv run python -m compileall -q . -x '(/\.git/|/node_modules/|/\.venv/|/build/|/dist/)' \
+            || { echo "::error::Python syntax errors found"; exit 1; }
           if [ "${{ steps.detect.outputs.build_only }}" = "true" ]; then
-            # Build-only: deps RESOLVED above; now verify the source COMPILES.
-            # compileall byte-compiles without importing or running app init, so
-            # it needs none of the private submodules / secrets / fixtures the
-            # repo's own CI provisions — it just catches SyntaxErrors. The test
-            # RUN is deferred to that CI.
-            uv run python -m compileall -q . -x '(/\.git/|/node_modules/|/\.venv/|/build/|/dist/)' \
-              || { echo "::error::Python syntax errors found"; exit 1; }
             echo "::notice::build-only: deps resolved + source compiled; deferring the pytest suite to the repo's own CI."
-          elif [ -d tests ] || [ -d test ]; then
+          else
+            # RUN WHAT PYTEST COLLECTS, NOT WHAT A DIRECTORY NAME SUGGESTS.
+            #
+            # This ran pytest only when a root tests/ or test/ existed. capaz
+            # keeps its suite under packs/ and points pytest there with
+            # [tool.pytest.ini_options] testpaths, so run 36913473551 logged "no
+            # tests/ directory" and went green having run none of it. pytest
+            # already reads the layout (testpaths, pytest.ini, nested test
+            # directories), so ask it. Exit 5 is pytest's own "collected no
+            # tests", and only that code becomes the warning; every other
+            # nonzero code fails the job.
+            #
             # Prefer the project's own pytest (its plugins — asyncio etc. —
             # matter); overlay one only when the project doesn't declare it.
             if uv run pytest --version >/dev/null 2>&1; then
-              uv run pytest -q
+              pytest_cmd=(uv run pytest)
             else
-              uv run --with pytest pytest -q
+              pytest_cmd=(uv run --with pytest pytest)
             fi
-          else
-            echo "::warning::no tests/ directory — the trust floor is dependency-resolution-only here"
+            rc=0
+            "${pytest_cmd[@]}" -q || rc=$?
+            if [ "$rc" -eq 5 ]; then
+              echo "::warning::pytest collected no tests — the trust floor is dependency resolution plus a syntax check here"
+            elif [ "$rc" -ne 0 ]; then
+              exit "$rc"
+            fi
           fi
 
       # --- Loose Python scripts (no project file): syntax floor ---
+      # The exclusions match whole path segments, as in the uv step above. This
+      # used the unanchored (\.git|node_modules|\.venv), whose \.git also
+      # matched .github/, so every script-only repo's vendored .github/scripts
+      # went uncompiled: a SyntaxError in .github/scripts/broken.py passed with
+      # exit 0 and 0 .pyc files written.
       - name: Python syntax floor (compileall)
         if: steps.detect.outputs.has_loose_py == 'true'
         shell: bash
         run: |
-          python3 -m compileall -q . -x '(\.git|node_modules|\.venv)' || { echo "::error::Python syntax errors found"; exit 1; }
+          python3 -m compileall -q . -x '(/\.git/|/node_modules/|/\.venv/)' || { echo "::error::Python syntax errors found"; exit 1; }
           echo "::warning::script-only repo — the trust floor is syntax-only here (no tests)"
 
       # --- .NET ---
@@ -415,6 +447,16 @@ jobs:
         if: steps.kit.outputs.self == 'true'
         shell: bash
         run: bash tests/Test-KitAccessBranch.sh pipeline/templates/ci-standards.yml
+      # Kit only: runs the REAL text of the "Python sync + tests" step against
+      # fixture trees with uv and pytest stubbed, so each exit path has been
+      # watched once: a suite outside tests/ that fails, pytest's exit 5, a
+      # syntax error no test imports, and the build-only marker. It also runs
+      # the loose-Python floor against a script-only tree whose syntax error
+      # sits in .github/scripts.
+      - name: Python floor runs what pytest collects (kit repo)
+        if: steps.kit.outputs.self == 'true'
+        shell: bash
+        run: bash tests/Test-PythonFloorBranch.sh pipeline/templates/ci-standards.yml
       # Kit only: the value that reaches GitHub must be the value in the file.
       # A pipe that appends CRLF, or quotes carried out of a dotenv line, both
       # produce a 401 while the real token still reports never used.
