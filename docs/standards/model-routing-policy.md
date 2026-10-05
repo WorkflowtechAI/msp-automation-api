@@ -298,7 +298,9 @@ Nothing after step 2 may re-admit anything step 2 removed.
   carried a bench record for `openrouter/anthropic/claude-opus-5:batch` with the
   reason "no usable output (exit 1)", a batch id that a lane resolved and a
   worker dispatched, failing the way an async endpoint fails a synchronous
-  headless call. Like `:free`, no override may lift it.
+  headless call. Like `:free`, no override may lift it. A distributed product's
+  declared batch lane is a separate route, not an override (see "Distributed
+  products", rule 4).
 - **Exclude router pseudo-models, and reject non-positive costs.**
   `openrouter/auto`, `openrouter/auto-beta` and `openrouter/free` are not
   selectable models at all; they are meta-routers that delegate the decision away
@@ -376,7 +378,9 @@ Nothing after step 2 may re-admit anything step 2 removed.
   catalog's OLDEST record, not by element zero: a partial write, a resumed run or
   a merge of a fresh fetch into a retained tail all break the assumption that one
   timestamp speaks for the file, and a stale record looks exactly like a fresh
-  one. A missing or unparseable stamp counts as infinitely old.
+  one. A missing or unparseable stamp counts as infinitely old. In a distributed
+  product the cap governs price ranking only (see "Distributed products",
+  rule 3).
 - **Availability is the third axis, and it must be OBSERVED.** Price and quality
   are necessary and not sufficient: a model that benchmarks well and prices well
   is worthless while it is timing out or rate-limiting you. Do not trust a
@@ -625,6 +629,41 @@ the model — do not keep retrying the same prompt.
 - Provider redundancy is required; graceful local-only fallback must exist.
 - Context marked not cloud-eligible (privacy/sensitive) must block cloud
   selection; if local inference is unavailable, return a local-only error.
+
+A distributed product meets the last two through its install policy and a
+deterministic-only fallback (see "Distributed products").
+
+## Distributed products (installs the vendor does not operate)
+
+The rest of this document assumes the operator runs the router, holds the keys
+and can reach the catalog. A product installed in a customer's environment runs
+on the customer's accounts, under the customer's data-handling rules, often
+behind egress controls the vendor cannot see. For such an install these five
+rules narrow the ones above, and every other rule still applies.
+
+1. **The install policy is the root data-handling filter.** The install's
+   administrator sets which external models it may call: none, the validated
+   set (rule 3), or an allowlist. Tenants inside the install may narrow it and
+   never widen it. It runs first at resolution step 2.
+2. **A graceful fallback exists, and without local inference it is
+   deterministic-only.** Every lane declares its deterministic path, the UI
+   labels the feature it degrades, and a generation lane with no deterministic
+   path fails loudly. "Local" means inside the customer's trust boundary; a
+   cloud endpoint the customer contracts is cloud, so context marked not
+   cloud-eligible never reaches it.
+3. **Eligibility comes from the release's signed validated-model snapshot**,
+   intersected with the install policy at resolution step 2. The snapshot is a
+   dated verbatim capture of catalog values for the models the release was
+   validated against: an eligibility record held to the pinned-fallback rules,
+   never a ranking. A reachable live catalog supplies current prices and
+   availability; otherwise the resolver ranks on the snapshot's recorded values
+   and logs "prices as of <release date>". The 72h hard maximum age governs
+   price ranking, never eligibility.
+4. **The `:batch` exclusion governs synchronous lanes.** A lane the product
+   declares as batch calls a provider's batch API directly, never an
+   aggregator's `:batch` SKU, and never carries personal data.
+5. **Spend caps, escalation metadata and the routing log belong to the install
+   and its tenants**, not to the vendor.
 
 ## Safety at the boundary
 
