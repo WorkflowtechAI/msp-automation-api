@@ -1,3 +1,5 @@
+# AUTO-SYNCED from the LLM Builder Kit. Do not edit here; edit the kit source and re-run sync-standards.ps1.
+
 # Claude code review. Posts a review comment on every PR.
 #
 # A repo gets this file two ways: operator-tools/Bootstrap-Repo.ps1 at onboarding,
@@ -8,6 +10,13 @@
 # secret. Bootstrap-Repo / Sync-Secrets sets the repo form; a repo that opted in
 # later has to be granted the key, and the first step here fails loudly until it
 # is. Fork PRs get no secret access.
+#
+# Third-party actions are SHA-pinned, the same supply-chain rule as
+# ci-standards.yml: the tag comment is for humans, the SHA is what runs. To bump
+# one, resolve the new tag to its COMMIT with
+# `gh api repos/<owner>/<action>/commits/<tag> --jq .sha` (for an annotated tag,
+# `git/ref/tags/<tag>` is the tag object, not the commit), then update the SHA
+# and the comment together.
 name: Claude code review
 
 on:
@@ -36,12 +45,66 @@ concurrency:
 jobs:
   review:
     name: Claude code review
+    # Hosted for a PUBLIC repo, the egi-vps pool for everything else.
+    #
+    # The org runner group excludes public repositories, so a public repo's job
+    # on [self-hosted, ...] queues forever with correct labels and idle runners:
+    # on claude-cert-examprep every review after the pool move sat queued, 8 h
+    # and then 12 h, and cancel/reopen could not help. GitHub-hosted minutes are
+    # free for public repos, and opening the pool to them would let fork PRs run
+    # code on the VPS, so public goes hosted. The test is the string 'public' on
+    # purpose: a missing or unknown visibility falls to the pool, which is the
+    # private-repo default and stays a visibly queued, never-green check on a
+    # public repo rather than silently billing a private one. (A queued check is
+    # loud in the sense that it never goes green, not in the sense of an
+    # immediate failure — GitHub times a job like that out, it does not fail it
+    # fast.) test_claude_review.py pins this exact line.
     runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || fromJSON('["self-hosted","Linux","X64"]') }}
-    # Only run with secrets for same-repo PRs; fork PRs never see the key.
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    # Two guards, and they answer different questions.
+    #
+    # SECRETS: only same-repo PRs run with the key; fork PRs never see it.
+    #
+    # DRAFTS: a push to a draft PR is not reviewed. A draft cannot merge, so
+    # reviewing each push to one spends on a diff nobody can ship — and
+    # iterate-in-draft is exactly where pushes cluster. Nothing is lost:
+    # `ready_for_review` is in the trigger list above, so marking a PR ready
+    # reviews the state that can actually merge, and every push after that is
+    # reviewed as before.
+    #
+    # Measured in the kit before this: 27 review runs in one day against a
+    # $5/day capped key at ~$0.18 a review — the ceiling almost exactly. Most
+    # were legitimate re-reviews of real changes and worth their cost. The draft
+    # ones were not.
+    if: >-
+      (github.event_name != 'pull_request_target' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      github.event.pull_request.draft != true
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # GitHub sets github.actor. The gate below must key its exemption on THIS
+      # and never on ANTHROPIC_API_KEY being empty: "no key" is also what a
+      # broken secret looks like, and excusing that is how seven constraints
+      # reported green for three days on 2026-08-27.
+      IS_DEPENDABOT: ${{ github.actor == 'dependabot[bot]' }}
+      # Route reviews through a LiteLLM broker so CI spend sits under a capped
+      # virtual key. Unset, the script calls Anthropic directly, as before. A
+      # repository VARIABLE, not a secret: a base URL is not sensitive, and a
+      # secret here would hide which host a review actually hit.
+      ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
       CLAUDE_REVIEW_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-sonnet-5' }}
+      # Per-repo ceiling without editing this vendored file: set a repository
+      # variable. Unset, the script uses its own default (empty string fails
+      # int() and falls through). The one repo that needed a higher ceiling had
+      # edited this line by hand and tripped standards-drift doing it.
+      CLAUDE_REVIEW_MAX_TOKENS: ${{ vars.CLAUDE_REVIEW_MAX_TOKENS }}
+      # Characters of diff in one model call, set the same way. A longer diff
+      # is read whole, in parts of this size, so raising it means fewer and
+      # larger calls, not more of the diff read.
+      CLAUDE_REVIEW_MAX_CHARS: ${{ vars.CLAUDE_REVIEW_MAX_CHARS }}
+      # What one review may cost in US dollars, set the same way; the script
+      # default is 5. The cost is estimated before any call, and a review over
+      # it does not run (`over-budget` below).
+      CLAUDE_REVIEW_MAX_USD: ${{ vars.CLAUDE_REVIEW_MAX_USD }}
       REVIEW_PROJECT_NAME: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number || '' }}
       BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
@@ -75,10 +138,37 @@ jobs:
             exit 1
           fi
 
+      # Check out the base BRANCH, not the base SHA the event payload carries.
+      #
+      # `github.event.pull_request.base.sha` is the base tip as it stood when
+      # the PR was opened, and GitHub does not refresh it when the base moves.
+      # So a fix merged to the base after a PR was opened never reached that
+      # PR's reviews. Measured on one managed repo: a PR opened against the
+      # 8192-token reviewer stayed on it through every run AND re-run after
+      # master had moved to the 32000-token one, the checkout step logged the
+      # stale ref each time, and each review died on max_tokens. Rebasing the
+      # PR was the only way the fix could reach it. A branch name is resolved
+      # when the job runs, so it is whatever the base is NOW, re-runs included.
+      #
+      # This is still the trusted side of pull_request_target. The base branch
+      # is repository history that only push access can change, and nothing
+      # from the PR reaches this ref: its author picks the base from branches
+      # that already exist here, and fork PRs never enter the job (the `if:`
+      # above). What must never happen is checking out head.sha with secrets in
+      # the environment, and that is unchanged. The diff under review comes
+      # from the GitHub API by PR number. A file the API sends without a patch
+      # is diffed by git from this checkout to pull/<n>/head, fetched as
+      # objects into a ref of the reviewer's own (claude_review.py, pr_diff):
+      # the PR's files are read, never checked out or run. fetch-depth: 0 below
+      # puts the merge base on disk, and the token this step leaves in the git
+      # config authenticates that fetch.
+      #
+      # workflow_dispatch has no pull request, so it falls back to the sha of
+      # the ref it was dispatched on, as before.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          ref: ${{ github.event.pull_request.base.ref || github.sha }}
           fetch-depth: 0
 
       # The reviewer's own parsing is tested BEFORE it is trusted to review.
@@ -103,14 +193,16 @@ jobs:
 
       - name: Upload Claude review artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: claude-review-${{ github.run_id }}
           path: claude-review.md
           if-no-files-found: ignore
 
+      # always(), so a truncated or empty review is still POSTED where it can be
+      # read. The check colour is decided separately, in the step after this one.
       - name: Post PR comment
-        if: github.event_name == 'pull_request_target'
+        if: always() && github.event_name == 'pull_request_target'
         run: |
           if [ -s claude-review.md ]; then
             if ! gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
@@ -127,3 +219,95 @@ jobs:
           else
             echo "Claude review did not produce output." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      # A REVIEW THAT STOPPED EARLY DID NOT REVIEW THE REST.
+      #
+      # The truncation banner tells a human, but the green check is what gets
+      # trusted and what feeds the auto-merge verdict in review-standards.md. A
+      # review of PR #32 spent its entire 8,192-token ceiling on reasoning,
+      # emitted the words "This diff", billed $0.15, and passed. Same rule as
+      # the missing-key step at the top of this job: a check that pays, reports
+      # success, and verified an unknown fraction of the diff is worse than one
+      # that fails, because the green is what people act on.
+      #
+      # Runs LAST so the review is posted and summarised first.
+      - name: Require a complete review
+        if: always()
+        run: |
+          status="$(cat claude-review.status 2>/dev/null || echo missing)"
+          case "$status" in
+            ok|skipped)
+              echo "Claude review status: $status"
+              ;;
+            no-key)
+              # The reviewer had no key, so it read nothing. Whether that blocks
+              # depends on whether anyone COULD fix it -- and that is the actor,
+              # never the key's absence. A Dependabot pull_request is served the
+              # Dependabot secret store and can never be given ANTHROPIC_API_KEY,
+              # so no commit its author pushes would help. Everyone else can fix
+              # the key, so for them this is a failure.
+              if [ "${IS_DEPENDABOT:-false}" = "true" ]; then
+                echo "::notice::No Claude review ran: a Dependabot PR is never given" \
+                     "Actions secrets, so ANTHROPIC_API_KEY does not exist on this run" \
+                     "and no author action can create it. NOT a pass -- this diff was" \
+                     "not reviewed."
+              else
+                echo "::error::The Claude review did not run: ANTHROPIC_API_KEY is not" \
+                     "set, so no part of this diff was reviewed. Set the secret and re-run."
+                exit 1
+              fi
+              ;;
+            partial)
+              # A file never reached the model: GitHub sent no patch for it and
+              # git could not produce one, or the files API listed fewer files
+              # than the PR changes (it stops at 3,000). The comment names each
+              # file it can, each cause, and the fix for that cause; this line
+              # points there, because a count that moved mid-run is fixed by a
+              # re-run and only a PR past the limit by a split.
+              # A gap like this only warned at first (kit #284). It blocks
+              # because an unread file is an unreviewed change, whatever the
+              # rest of the review says. Raised in review on capaz#14.
+              echo "::error::The Claude review read only part of this diff. The PR comment" \
+                   "says what it did not read, why, and what to do. A file it" \
+                   "could not get a diff for: fix the cause the job log names, then re-run." \
+                   "A PR past GitHub's 3,000-file limit: split it."
+              exit 1
+              ;;
+            over-budget)
+              # The estimated cost was over CLAUDE_REVIEW_MAX_USD, so nothing was
+              # sent to the model. The review body gives the size, the estimate
+              # and the cap in effect; the cap is not echoed here because the raw
+              # variable can be a typo the script rejected. A manual run posts no
+              # PR comment, so there the body is in the job summary.
+              echo "::error::The Claude review did not run: its estimated cost is over the" \
+                   "cap. The PR comment, or the job summary on a manual run, gives the size" \
+                   "and the estimate. The operator decides: raise the CLAUDE_REVIEW_MAX_USD" \
+                   "repository variable and re-run, split the PR, or, for a full-codebase" \
+                   "run, lower CLAUDE_REVIEW_MAX_CHARS."
+              exit 1
+              ;;
+            truncated)
+              echo "::error::The Claude review hit its output-token ceiling and is incomplete," \
+                   "so an unknown part of this diff went unreviewed. Raise CLAUDE_REVIEW_MAX_TOKENS" \
+                   "(currently ${CLAUDE_REVIEW_MAX_TOKENS:-the script default}) and re-run."
+              exit 1
+              ;;
+            empty)
+              echo "::error::The Claude review returned no text. This is a tooling failure," \
+                   "not a clean bill of health. See the posted comment for stop_reason."
+              exit 1
+              ;;
+            failed)
+              echo "::error::The Claude review did not run: the API returned an error or the" \
+                   "reviewer stopped on one it does not handle, so no part of this diff was" \
+                   "reviewed. The posted comment says which, with the status code and response" \
+                   "body for an API error. A spending ceiling on the key and a rate limit both" \
+                   "arrive as 429, and the body says which."
+              exit 1
+              ;;
+            *)
+              echo "::error::No Claude review status was written, so nothing proves a review ran." \
+                   "Treating that as a failure rather than a pass."
+              exit 1
+              ;;
+          esac
