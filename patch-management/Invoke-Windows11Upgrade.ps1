@@ -154,7 +154,10 @@ $exitCode = 0
 $servicesStopped = $false
 try {
     if ($Method -eq 'InstallationAssistant') {
-        $assistant = Join-Path ([IO.Path]::GetTempPath()) 'Windows11InstallationAssistant.exe'
+        # A per-run folder, not a fixed name in the shared temp directory, so nothing can pre-place or swap the file between the signature check and the launch.
+        $assistantDir = Join-Path ([IO.Path]::GetTempPath()) ('w11-assistant-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $assistantDir | Out-Null
+        $assistant = Join-Path $assistantDir 'Windows11InstallationAssistant.exe'
         $logger.Info("Downloading the Installation Assistant from $AssistantUrl")
         Invoke-WebRequest -Uri $AssistantUrl -OutFile $assistant -UseBasicParsing
         if (-not (Test-Path -LiteralPath $assistant) -or (Get-Item -LiteralPath $assistant).Length -eq 0) {

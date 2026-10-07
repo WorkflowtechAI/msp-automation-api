@@ -93,7 +93,7 @@ try {
     $existing = Get-RemoteMailbox -Identity $Identity -ErrorAction SilentlyContinue
     if ($existing) {
         if (-not (Test-HasRoutingDomainAddress -Address @($existing.EmailAddresses | ForEach-Object { "$_" }) -RoutingDomain $RoutingDomain)) {
-            throw "$Identity already has a remote mailbox with no address in $RoutingDomain. Not changing it; check the tenant routing domain."
+            throw "$Identity already has a remote mailbox with no address in $RoutingDomain (it has: $(@($existing.EmailAddresses) -join ', ')). Not changing it; check the tenant routing domain."
         }
         $logger.Info("$Identity already has a remote mailbox routed through $RoutingDomain; nothing to do.")
     } elseif ($PSCmdlet.ShouldProcess($Identity, "Enable remote mailbox (alias $Alias, routing $routing)")) {
