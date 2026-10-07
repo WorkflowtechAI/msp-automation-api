@@ -85,11 +85,11 @@ if (-not $WhatIfPreference -and -not (Test-IsElevated)) {
 }
 
 $binaryName = Get-SysmonBinaryName
-$installed  = Join-Path $InstallDirectory $binaryName
+$installed  = [System.IO.Path]::Combine($InstallDirectory, $binaryName)
 $oldVersion = if ([System.IO.File]::Exists($installed)) { (Get-Item -LiteralPath $installed).VersionInfo.FileVersion } else { $null }
 $logger.Info("Current Sysmon: $(if ($oldVersion) { $oldVersion } else { 'not installed' })")
 
-if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Download latest Sysmon, replace $installed, reinstall with config $ConfigPath")) {
+if (-not $PSCmdlet.ShouldProcess([Environment]::MachineName, "Download latest Sysmon, replace $installed, reinstall with config $ConfigPath")) {
     $logger.Info('WhatIf/declined: nothing changed.')
     exit 0
 }

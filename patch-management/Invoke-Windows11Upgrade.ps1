@@ -125,7 +125,7 @@ if (-not $WhatIfPreference -and -not (Test-IsElevated)) {
     exit 1
 }
 
-if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Windows 11 upgrade via $Method")) {
+if (-not $PSCmdlet.ShouldProcess([Environment]::MachineName, "Windows 11 upgrade via $Method")) {
     $logger.Info('WhatIf/declined: nothing changed.')
     exit 0
 }
