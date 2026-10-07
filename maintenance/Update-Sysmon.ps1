@@ -124,7 +124,7 @@ try {
     $replaceStarted = $true
     if ($oldVersion) {
         $logger.Info('Uninstalling current Sysmon.')
-        Invoke-Native -FilePath $installed -ArgumentList '-u' | Out-Null
+        Invoke-Native -FilePath $installed -ArgumentList '-u', 'force' | Out-Null
     }
     Copy-Item -LiteralPath $fresh -Destination $installed -Force
     $logger.Info("Installing with config $ConfigPath")
