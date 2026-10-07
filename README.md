@@ -70,7 +70,7 @@ framework.
 ### Field-note scripts
 
 Standalone pwsh 7 scripts rebuilt from the author's field notes. Each takes its environment
-as parameters, supports `-WhatIf` where it changes anything, and exits 1 on failure. They
+as parameters and supports `-WhatIf` where it changes anything. The ones that change anything exit 1 on failure; `Get-DirectoryJoinInfo` exits 1 only if it cannot read the machine at all and lists undetectable facts in `Notes`. They
 are not part of the `modules/` API layer.
 
 | Script | What it does |

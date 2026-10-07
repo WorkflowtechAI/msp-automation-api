@@ -18,6 +18,9 @@
 
     The ActiveDirectory module is optional. Without it the script still reports join type and
     falls back for the PDC.
+    Exit code: 1 if the machine's basic facts cannot be read or the -ExportJson file cannot be
+    written. A directory fact that cannot be detected (PDC, sync server) is not a failure; it is
+    reported in Notes and the exit code stays 0.
 .PARAMETER ExportJson
     Write the result object to this path as JSON.
 .EXAMPLE
@@ -137,7 +140,13 @@ function Get-AdSyncInfo {
 # Main. Functions above are defined without side effects so tests can load them alone.
 $notes = [System.Collections.Generic.List[string]]::new()
 
-$cs = Get-CimInstance -ClassName Win32_ComputerSystem
+try {
+    $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+} catch {
+    # Without this fact every other answer would be a guess, so stop instead of reporting "Workgroup".
+    Write-Host "[ERROR] Cannot read Win32_ComputerSystem: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
 $dsreg = $null
 try {
     $dsreg = ConvertFrom-DsregStatus -Text (dsregcmd /status)
@@ -180,8 +189,14 @@ Write-Host (Get-JoinSummary -Info $info) -ForegroundColor Cyan
 foreach ($n in $notes) { Write-Warning $n }
 
 if ($ExportJson) {
-    $info | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ExportJson -Encoding utf8
-    Write-Host "[OK] Exported to $ExportJson" -ForegroundColor Green
+    try {
+        $info | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ExportJson -Encoding utf8 -ErrorAction Stop
+        Write-Host "[OK] Exported to $ExportJson" -ForegroundColor Green
+    } catch {
+        Write-Host "[ERROR] Could not write ${ExportJson}: $($_.Exception.Message)" -ForegroundColor Red
+        $info
+        exit 1
+    }
 }
 
 $info
