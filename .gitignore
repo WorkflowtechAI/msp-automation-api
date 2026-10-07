@@ -8,6 +8,8 @@ ad-test-query.ps1
 ad-user-query.ps1
 local-admin-report.ps1
 update-sysmon.ps1
+# The reviewed rewrite lives in maintenance/; only the old one-off name stays ignored.
+!maintenance/Update-Sysmon.ps1
 upgrade-to-win11-assistant.ps1
 index-page.htm
 
