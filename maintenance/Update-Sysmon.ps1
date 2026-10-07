@@ -92,11 +92,14 @@ if (-not $WhatIfPreference -and -not (Test-IsElevated)) {
 }
 
 $binaryName = Get-SysmonBinaryName
-$installed  = [System.IO.Path]::Combine($InstallDirectory, $binaryName)
-$oldVersion = if ([System.IO.File]::Exists($installed)) { (Get-Item -LiteralPath $installed).VersionInfo.FileVersion } else { $null }
+$target     = [System.IO.Path]::Combine($InstallDirectory, $binaryName)
+# An existing install may use either name (for example after a migration), so look for both.
+$installed  = @('Sysmon64.exe', 'Sysmon.exe') | ForEach-Object { [System.IO.Path]::Combine($InstallDirectory, $_) } |
+    Where-Object { [System.IO.File]::Exists($_) } | Select-Object -First 1
+$oldVersion = if ($installed) { (Get-Item -LiteralPath $installed).VersionInfo.FileVersion } else { $null }
 $logger.Info("Current Sysmon: $(if ($oldVersion) { $oldVersion } else { 'not installed' })")
 
-if (-not $PSCmdlet.ShouldProcess([Environment]::MachineName, "Download latest Sysmon, replace $installed, reinstall with config $ConfigPath")) {
+if (-not $PSCmdlet.ShouldProcess([Environment]::MachineName, "Download latest Sysmon, replace $target, reinstall with config $ConfigPath")) {
     $logger.Info('WhatIf/declined: nothing changed.')
     exit 0
 }
@@ -126,14 +129,15 @@ try {
         $logger.Info('Uninstalling current Sysmon.')
         Invoke-Native -FilePath $installed -ArgumentList '-u', 'force' | Out-Null
     }
-    Copy-Item -LiteralPath $fresh -Destination $installed -Force
+    if ($installed -and $installed -ne $target) { Remove-Item -LiteralPath $installed -Force }
+    Copy-Item -LiteralPath $fresh -Destination $target -Force
     $logger.Info("Installing with config $ConfigPath")
-    Invoke-Native -FilePath $installed -ArgumentList '-accepteula', '-i', $ConfigPath | Out-Null
+    Invoke-Native -FilePath $target -ArgumentList '-accepteula', '-i', $ConfigPath | Out-Null
 
     $service = Get-Service -Name 'Sysmon64', 'Sysmon' -ErrorAction SilentlyContinue | Where-Object Status -eq 'Running'
     if (-not $service) { throw 'Install command succeeded but no Sysmon service is running.' }
 
-    $installedNow = (Get-Item -LiteralPath $installed).VersionInfo.FileVersion
+    $installedNow = (Get-Item -LiteralPath $target).VersionInfo.FileVersion
     $logger.Info("Sysmon version: $(if ($oldVersion) { $oldVersion } else { 'none' }) -> $installedNow")
 } catch {
     $logger.Error("Update failed: $($_.Exception.Message)")

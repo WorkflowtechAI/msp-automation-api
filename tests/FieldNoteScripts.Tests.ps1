@@ -565,7 +565,7 @@ Describe 'Set-UserPrimarySmtpAddress' {
 Describe 'Enable-HybridRemoteMailbox' {
     BeforeAll {
         $script:EnableRm = Join-Path $script:Repo 'm365-azure' 'Enable-HybridRemoteMailbox.ps1'
-        . ([scriptblock]::Create((Get-ScriptFunctionText -Path $script:EnableRm -Name 'New-RemoteRoutingAddress', 'Get-DefaultAlias', 'Test-HasRoutingDomainAddress')))
+        . ([scriptblock]::Create((Get-ScriptFunctionText -Path $script:EnableRm -Name 'New-RemoteRoutingAddress', 'Get-DefaultAlias', 'Test-HasRoutingDomainAddress', 'Test-IsNotFoundError')))
         $script:RmStubs = New-CommandStub @{
             'Get-RemoteMailbox'    = 'param($Identity)'
             'Enable-RemoteMailbox' = 'param($Identity, $Alias, $RemoteRoutingAddress, [switch]$Archive)'
@@ -590,6 +590,12 @@ Describe 'Enable-HybridRemoteMailbox' {
             Test-HasRoutingDomainAddress -Address @('SMTP:a@contoso.com', 'smtp:a@fabrikam.mail.onmicrosoft.com') -RoutingDomain 'contoso.mail.onmicrosoft.com' | Should -BeFalse
             Test-HasRoutingDomainAddress -Address @('smtp:a@evilcontoso.mail.onmicrosoft.com') -RoutingDomain 'contoso.mail.onmicrosoft.com' | Should -BeFalse
             Test-HasRoutingDomainAddress -Address @() -RoutingDomain 'contoso.mail.onmicrosoft.com' | Should -BeFalse
+        }
+        It 'treats only not-found errors as "mailbox absent"' {
+            $nf = try { throw [System.Management.Automation.ItemNotFoundException]::new('x') } catch { $_ }
+            $denied = try { throw [System.UnauthorizedAccessException]::new('x') } catch { $_ }
+            Test-IsNotFoundError -ErrorRecord $nf | Should -BeTrue
+            Test-IsNotFoundError -ErrorRecord $denied | Should -BeFalse
         }
         It 'derives the alias from an address or a bare name' {
             Get-DefaultAlias -Identity 'jane.doe@contoso.com' | Should -Be 'jane.doe'
@@ -664,6 +670,25 @@ Describe 'Enable-HybridRemoteMailbox' {
             }
             $r = Invoke-ScriptFile -Path $script:EnableRm -Params @{ Identity = 'jdoe@contoso.com'; RoutingDomain = $script:Routing; LogPath = $TestDrive; Confirm = $false }
             $r.ExitCode | Should -Be 1
+        }
+
+        It 'proceeds to create when the existence check throws a not-found error' {
+            Mock Get-RemoteMailbox {
+                $global:RmCalls++
+                if ($global:RmCalls -eq 1) { throw [System.Management.Automation.ItemNotFoundException]::new('not found') }
+                [pscustomobject]@{ Alias = 'jdoe'; EmailAddresses = @('SMTP:jdoe@contoso.com', 'smtp:jdoe@contoso.mail.onmicrosoft.com') }
+            }
+            $r = Invoke-ScriptFile -Path $script:EnableRm -Params @{ Identity = 'jdoe@contoso.com'; RoutingDomain = $script:Routing; LogPath = $TestDrive; Confirm = $false }
+            $r.ExitCode | Should -Be 0
+            Should -Invoke Enable-RemoteMailbox -Times 1 -Exactly
+        }
+
+        It 'exits non-zero and never creates when the existence check hits a permission error' {
+            Mock Get-RemoteMailbox { throw [System.UnauthorizedAccessException]::new('Access is denied') }
+            $r = Invoke-ScriptFile -Path $script:EnableRm -Params @{ Identity = 'jdoe@contoso.com'; RoutingDomain = $script:Routing; LogPath = $TestDrive; Confirm = $false }
+            $r.ExitCode | Should -Not -Be 0
+            ($r.Output | Out-String) | Should -Match 'not creating one'
+            Should -Invoke Enable-RemoteMailbox -Times 0 -Exactly
         }
 
         It 'exits 1 when Enable-RemoteMailbox fails' {

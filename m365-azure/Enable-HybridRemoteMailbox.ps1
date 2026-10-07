@@ -62,6 +62,13 @@ function Test-HasRoutingDomainAddress {
     [bool](@($Address) | Where-Object { $_ -and $_.EndsWith($suffix, [StringComparison]::OrdinalIgnoreCase) })
 }
 
+function Test-IsNotFoundError {
+    <# Pure: true only for a "no such object" error; permission and connectivity errors are false. #>
+    param([Parameter(Mandatory)]$ErrorRecord)
+    $ex = $ErrorRecord.Exception
+    ($ex.GetType().Name -match 'NotFound') -or ("$($ErrorRecord.FullyQualifiedErrorId)" -match 'NotFound')
+}
+
 function Get-DefaultAlias {
     <# Pure: the local part of an address, or the whole identity when it has no @. #>
     param([Parameter(Mandatory)][string]$Identity)
@@ -90,7 +97,16 @@ try {
     if (-not $Alias) { $Alias = Get-DefaultAlias -Identity $Identity }
     $routing = New-RemoteRoutingAddress -Alias $Alias -RoutingDomain $RoutingDomain
 
-    $existing = Get-RemoteMailbox -Identity $Identity -ErrorAction SilentlyContinue
+    $existing = $null
+    try {
+        $existing = Get-RemoteMailbox -Identity $Identity -ErrorAction Stop
+    } catch {
+        # Only "not found" means the mailbox is absent. Anything else (permissions, connectivity)
+        # must stop the run, never fall through to the create.
+        if (-not (Test-IsNotFoundError -ErrorRecord $_)) {
+            throw "Could not check whether $Identity already has a remote mailbox; not creating one. $($_.Exception.Message)"
+        }
+    }
     if ($existing) {
         if (-not (Test-HasRoutingDomainAddress -Address @($existing.EmailAddresses | ForEach-Object { "$_" }) -RoutingDomain $RoutingDomain)) {
             throw "$Identity already has a remote mailbox with no address in $RoutingDomain (it has: $(@($existing.EmailAddresses) -join ', ')). Not changing it; check the tenant routing domain."
