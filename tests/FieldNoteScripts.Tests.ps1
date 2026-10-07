@@ -537,6 +537,22 @@ Describe 'Set-UserPrimarySmtpAddress' {
             Should -Invoke Set-ADUser -Times 0 -Exactly
         }
 
+        It 'still exits 0 when -VerifyInGraph cannot read Graph, because the AD change is applied' {
+            $script:GraphStubs = New-CommandStub @{
+                'Get-MgContext' = 'param()'
+                'Get-MgUser'    = 'param($UserId, $Property, $ErrorAction)'
+            }
+            try {
+                Mock Get-MgContext { [pscustomobject]@{ Account = 'test' } }
+                Mock Get-MgUser { throw 'Graph throttled' }
+                $r = Invoke-ScriptFile -Path $script:SetSmtp -Params @{ Identity = 'jdoe'; NewPrimarySmtp = 'new@contoso.com'; VerifyInGraph = $true; LogPath = $TestDrive; Confirm = $false }
+                $r.ExitCode | Should -Be 0
+                Should -Invoke Set-ADUser -Times 1 -Exactly
+            } finally {
+                foreach ($n in $script:GraphStubs) { Remove-Item "function:global:$n" -ErrorAction SilentlyContinue }
+            }
+        }
+
         It 'exits 1 when the read-back does not show the new primary' {
             Mock Get-ADUser { [pscustomobject]@{ proxyAddresses = @('SMTP:old@contoso.com') } } -ParameterFilter { $Identity }
             $r = Invoke-ScriptFile -Path $script:SetSmtp -Params @{ Identity = 'jdoe'; NewPrimarySmtp = 'new@contoso.com'; LogPath = $TestDrive; Confirm = $false }

@@ -148,11 +148,17 @@ try {
             if (-not (Get-Command Get-MgContext -ErrorAction SilentlyContinue) -or -not (Get-MgContext)) {
                 $logger.Warning('-VerifyInGraph skipped: no Microsoft Graph session (Connect-MgGraph first).')
             } else {
-                $cloud = Get-MgUser -UserId $user.UserPrincipalName -Property proxyAddresses
-                if (@($cloud.ProxyAddresses) -ccontains "SMTP:$NewPrimarySmtp") {
-                    $logger.Info('Graph already shows the new primary.')
-                } else {
-                    $logger.Warning('Graph does not show the new primary yet; it appears after the next directory sync.')
+                # The AD change already succeeded and was read back. A Graph problem here must only warn,
+                # or automation would see a failure and retry a change that is already applied.
+                try {
+                    $cloud = Get-MgUser -UserId $user.UserPrincipalName -Property proxyAddresses -ErrorAction Stop
+                    if (@($cloud.ProxyAddresses) -ccontains "SMTP:$NewPrimarySmtp") {
+                        $logger.Info('Graph already shows the new primary.')
+                    } else {
+                        $logger.Warning('Graph does not show the new primary yet; it appears after the next directory sync.')
+                    }
+                } catch {
+                    $logger.Warning("-VerifyInGraph could not read the user from Graph: $($_.Exception.Message). The AD change is applied.")
                 }
             }
         }
