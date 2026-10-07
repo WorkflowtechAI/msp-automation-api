@@ -176,6 +176,10 @@ Describe 'Update-Sysmon' {
         Get-SysmonBinaryName | Should -BeIn 'Sysmon64.exe', 'Sysmon.exe'
     }
 
+    It 'rejects a non-https download URL' {
+        { & $script:Sysmon -ConfigPath $script:Config -DownloadUrl 'http://example.com/Sysmon.zip' -LogPath $TestDrive -WhatIf } | Should -Throw
+    }
+
     It 'declares -ConfigPath as mandatory' {
         $attr = (Get-Command $script:Sysmon).Parameters['ConfigPath'].Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] }
         $attr.Mandatory | Should -BeTrue
@@ -255,6 +259,9 @@ Describe 'Invoke-Windows11Upgrade' {
         It 'accepts KB ids with or without the prefix' {
             { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion 24H2 -KBArticleID 'KB5012345', '5012346' -LogPath $TestDrive -WhatIf } | Should -Not -Throw
         }
+        It 'rejects a non-https Assistant URL' {
+            { & $script:W11 -Method InstallationAssistant -AssistantUrl 'http://example.com/a.exe' -LogPath $TestDrive -WhatIf } | Should -Throw
+        }
         It 'accepts a lower-case release' {
             { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion '24h2' -LogPath $TestDrive -WhatIf } | Should -Not -Throw
         }
@@ -305,7 +312,17 @@ Describe 'Invoke-Windows11Upgrade' {
             Should -Invoke Set-WUSettings -Times 0 -Exactly
             Should -Invoke Get-WindowsUpdate -Times 0 -Exactly
         }
+        It 'refuses to touch staging while an upgrade process is running' {
+            Mock Get-Process { [pscustomobject]@{ ProcessName = 'SetupHost' } }
+            $r = Invoke-ScriptFile -Path $script:W11 -Params @{ Method = 'InstallationAssistant'; LogPath = $TestDrive; Confirm = $false }
+            $r.ExitCode | Should -Be 1
+            ($r.Output | Out-String) | Should -Match 'upgrade appears to be running'
+            Should -Invoke Stop-Service -Times 0 -Exactly
+            Should -Invoke Invoke-WebRequest -Times 0 -Exactly
+            Should -Invoke Start-Process -Times 0 -Exactly
+        }
         It 'refuses to run when not elevated' -Skip:$script:RunnerIsElevated {
+            Mock Get-Process { }
             $r = Invoke-ScriptFile -Path $script:W11 -Params @{ Method = 'InstallationAssistant'; LogPath = $TestDrive; Confirm = $false }
             $r.ExitCode | Should -Be 1
             Should -Invoke Invoke-WebRequest -Times 0 -Exactly
@@ -532,7 +549,7 @@ Describe 'Set-UserPrimarySmtpAddress' {
 Describe 'Enable-HybridRemoteMailbox' {
     BeforeAll {
         $script:EnableRm = Join-Path $script:Repo 'm365-azure' 'Enable-HybridRemoteMailbox.ps1'
-        . ([scriptblock]::Create((Get-ScriptFunctionText -Path $script:EnableRm -Name 'New-RemoteRoutingAddress', 'Get-DefaultAlias')))
+        . ([scriptblock]::Create((Get-ScriptFunctionText -Path $script:EnableRm -Name 'New-RemoteRoutingAddress', 'Get-DefaultAlias', 'Test-HasRoutingDomainAddress')))
         $script:RmStubs = New-CommandStub @{
             'Get-RemoteMailbox'    = 'param($Identity)'
             'Enable-RemoteMailbox' = 'param($Identity, $Alias, $RemoteRoutingAddress, [switch]$Archive)'
@@ -549,6 +566,14 @@ Describe 'Enable-HybridRemoteMailbox' {
         }
         It 'tolerates a leading @ on the domain' {
             New-RemoteRoutingAddress -Alias 'jdoe' -RoutingDomain '@contoso.mail.onmicrosoft.com' | Should -Be 'jdoe@contoso.mail.onmicrosoft.com'
+        }
+        It 'recognises an address in the routing domain, ignoring case' {
+            Test-HasRoutingDomainAddress -Address @('SMTP:a@contoso.com', 'smtp:A@Contoso.Mail.OnMicrosoft.com') -RoutingDomain 'contoso.mail.onmicrosoft.com' | Should -BeTrue
+        }
+        It 'does not match a different tenant domain or a look-alike suffix' {
+            Test-HasRoutingDomainAddress -Address @('SMTP:a@contoso.com', 'smtp:a@fabrikam.mail.onmicrosoft.com') -RoutingDomain 'contoso.mail.onmicrosoft.com' | Should -BeFalse
+            Test-HasRoutingDomainAddress -Address @('smtp:a@evilcontoso.mail.onmicrosoft.com') -RoutingDomain 'contoso.mail.onmicrosoft.com' | Should -BeFalse
+            Test-HasRoutingDomainAddress -Address @() -RoutingDomain 'contoso.mail.onmicrosoft.com' | Should -BeFalse
         }
         It 'derives the alias from an address or a bare name' {
             Get-DefaultAlias -Identity 'jane.doe@contoso.com' | Should -Be 'jane.doe'
@@ -602,9 +627,16 @@ Describe 'Enable-HybridRemoteMailbox' {
         }
 
         It 'does nothing and exits 0 when a remote mailbox already exists' {
-            Mock Get-RemoteMailbox { [pscustomobject]@{ Alias = 'jdoe'; EmailAddresses = @() } }
+            Mock Get-RemoteMailbox { [pscustomobject]@{ Alias = 'jdoe'; EmailAddresses = @('SMTP:jdoe@contoso.com', 'smtp:jdoe@contoso.mail.onmicrosoft.com') } }
             $r = Invoke-ScriptFile -Path $script:EnableRm -Params @{ Identity = 'jdoe@contoso.com'; RoutingDomain = $script:Routing; LogPath = $TestDrive; Confirm = $false }
             $r.ExitCode | Should -Be 0
+            Should -Invoke Enable-RemoteMailbox -Times 0 -Exactly
+        }
+
+        It 'exits 1 and changes nothing when the existing mailbox has no address in the routing domain' {
+            Mock Get-RemoteMailbox { [pscustomobject]@{ Alias = 'jdoe'; EmailAddresses = @('SMTP:jdoe@contoso.com', 'smtp:jdoe@fabrikam.mail.onmicrosoft.com') } }
+            $r = Invoke-ScriptFile -Path $script:EnableRm -Params @{ Identity = 'jdoe@contoso.com'; RoutingDomain = $script:Routing; LogPath = $TestDrive; Confirm = $false }
+            $r.ExitCode | Should -Be 1
             Should -Invoke Enable-RemoteMailbox -Times 0 -Exactly
         }
 

@@ -8,7 +8,10 @@
         folders, downloads Microsoft's Windows 11 Installation Assistant, verifies its Authenticode
         signature, launches it, and copies its logs to -LogDestination.
         Refuses to clear staging while an upgrade appears to be running (SetupHost or the
-        Assistant itself).
+        Assistant itself). It cannot see servicing done by Windows Update's own workers, so do
+        not run it while a feature update is installing through Windows Update.
+        Without -Wait, exit code 0 means the Assistant was LAUNCHED, not that the upgrade
+        succeeded or even passed its own checks. Use -Wait when the exit code must mean more.
     -Method WindowsUpdate
         Uses the PSWindowsUpdate module (must already be installed) to pin the target release with
         Set-WUSettings -TargetReleaseVersion and then installs through Microsoft Update.
@@ -67,6 +70,7 @@ param(
     [ValidatePattern('^(KB)?\d{6,8}$')]
     [string[]]$KBArticleID,
 
+    [ValidatePattern('^https://')]
     [string]$AssistantUrl = 'https://go.microsoft.com/fwlink/?linkid=2171764',
 
     [string]$LogDestination = 'C:\UA_Logs',
@@ -123,6 +127,14 @@ if ($Method -eq 'InstallationAssistant' -and ($TargetReleaseVersion -or $KBArtic
     exit 1
 }
 
+if ($Method -eq 'InstallationAssistant') {
+    $busy = Get-Process -Name SetupHost, Windows10UpgraderApp, Windows11InstallationAssistant -ErrorAction SilentlyContinue
+    if ($busy) {
+        $logger.Error("An upgrade appears to be running ($(@($busy.ProcessName | Sort-Object -Unique) -join ', ')). Not clearing its staging folders.")
+        exit 1
+    }
+}
+
 if ($SkipCompatCheck) {
     $logger.Warning('SkipCompatCheck is ON: the hardware compatibility check is bypassed and the machine will be on unsupported hardware.')
 }
@@ -141,8 +153,6 @@ $exitCode = 0
 $servicesStopped = $false
 try {
     if ($Method -eq 'InstallationAssistant') {
-        $busy = Get-Process -Name SetupHost, Windows10UpgraderApp, Windows11InstallationAssistant -ErrorAction SilentlyContinue
-        if ($busy) { throw "An upgrade appears to be running ($(@($busy.ProcessName | Sort-Object -Unique) -join ', ')). Not clearing its staging folders." }
 
         $logger.Info('Clearing the Windows Update download cache.')
         $servicesStopped = $true
@@ -180,6 +190,8 @@ try {
         if ($Wait) {
             $proc.WaitForExit()
             if ($proc.ExitCode -ne 0) { throw "The Assistant exited with code $($proc.ExitCode)." }
+        } else {
+            $logger.Info('Assistant launched. Exit code 0 means launched, not completed; check its logs for the outcome.')
         }
 
         $logSource = Join-Path $env:ProgramData 'Microsoft\Windows\UpdateAssistant'

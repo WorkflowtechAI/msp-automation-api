@@ -40,6 +40,7 @@ param(
 
     [string]$InstallDirectory = $(if ($env:SystemRoot) { $env:SystemRoot } else { 'C:\Windows' }),
 
+    [ValidatePattern('^https://')]
     [string]$DownloadUrl = 'https://download.sysinternals.com/files/Sysmon.zip',
 
     [string]$LogPath = 'C:\Logs\MSP'

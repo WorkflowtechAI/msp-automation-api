@@ -10,7 +10,9 @@
     Run it in the on-prem Exchange Management Shell (or a remote session to it) so that
     Enable-RemoteMailbox and Get-RemoteMailbox exist. It does not assign licenses.
 
-    If the user already has a remote mailbox the script reports it and exits 0 without changes.
+    If the user already has a remote mailbox and it has an address in -RoutingDomain, the script
+    reports it and exits 0 without changes. If it has none, the script exits 1: the mailbox is
+    routed to a different tenant domain than the one you gave, and this script will not change it.
     Exit code 1 on any failure, including a read-back that does not show the routing address.
 .PARAMETER Identity
     The on-prem user: UserPrincipalName, SamAccountName or primary SMTP address.
@@ -53,6 +55,13 @@ function New-RemoteRoutingAddress {
     "$($Alias.Trim())@$($RoutingDomain.Trim().TrimStart('@'))"
 }
 
+function Test-HasRoutingDomainAddress {
+    <# Pure: does any address in the list end in @<routing domain>? #>
+    param([string[]]$Address, [Parameter(Mandatory)][string]$RoutingDomain)
+    $suffix = '@' + $RoutingDomain.Trim().TrimStart('@')
+    [bool](@($Address) | Where-Object { $_ -and $_.EndsWith($suffix, [StringComparison]::OrdinalIgnoreCase) })
+}
+
 function Get-DefaultAlias {
     <# Pure: the local part of an address, or the whole identity when it has no @. #>
     param([Parameter(Mandatory)][string]$Identity)
@@ -83,7 +92,10 @@ try {
 
     $existing = Get-RemoteMailbox -Identity $Identity -ErrorAction SilentlyContinue
     if ($existing) {
-        $logger.Info("$Identity already has a remote mailbox; nothing to do.")
+        if (-not (Test-HasRoutingDomainAddress -Address @($existing.EmailAddresses | ForEach-Object { "$_" }) -RoutingDomain $RoutingDomain)) {
+            throw "$Identity already has a remote mailbox with no address in $RoutingDomain. Not changing it; check the tenant routing domain."
+        }
+        $logger.Info("$Identity already has a remote mailbox routed through $RoutingDomain; nothing to do.")
     } elseif ($PSCmdlet.ShouldProcess($Identity, "Enable remote mailbox (alias $Alias, routing $routing)")) {
         $enable = @{ Identity = $Identity; Alias = $Alias; RemoteRoutingAddress = $routing }
         if ($Archive) { $enable.Archive = $true }
