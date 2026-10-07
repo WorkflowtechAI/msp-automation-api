@@ -257,7 +257,7 @@ Describe 'Invoke-Windows11Upgrade' {
             { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion 24H2 -KBArticleID 'not-a-kb' -LogPath $TestDrive -WhatIf } | Should -Throw
         }
         It 'accepts KB ids with or without the prefix' {
-            { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion 24H2 -KBArticleID 'KB5012345', '5012346' -LogPath $TestDrive -WhatIf } | Should -Not -Throw
+            { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion 24H2 -KBArticleID 'KB5012345', '5012346', 'kb5012347' -LogPath $TestDrive -WhatIf } | Should -Not -Throw
         }
         It 'rejects a non-https Assistant URL' {
             { & $script:W11 -Method InstallationAssistant -AssistantUrl 'http://example.com/a.exe' -LogPath $TestDrive -WhatIf } | Should -Throw

@@ -4,9 +4,10 @@
     In-place upgrade of Windows 10 to Windows 11, by the Installation Assistant or by Windows Update.
 .DESCRIPTION
     -Method InstallationAssistant
-        Clears the Windows Update download cache and any stale $WINDOWS.~BT / $WINDOWS.~WS staging
-        folders, downloads Microsoft's Windows 11 Installation Assistant, verifies its Authenticode
-        signature, launches it, and copies its logs to -LogDestination.
+        Downloads Microsoft's Windows 11 Installation Assistant and verifies its Authenticode
+        signature first. Only then does it clear the Windows Update download cache and any stale
+        $WINDOWS.~BT / $WINDOWS.~WS staging folders, launch the Assistant, and copy its logs to
+        -LogDestination. A failed download or signature check changes nothing on the machine.
         Refuses to clear staging while an upgrade appears to be running (SetupHost or the
         Assistant itself). It cannot see servicing done by Windows Update's own workers, so do
         not run it while a feature update is installing through Windows Update.
@@ -67,7 +68,7 @@ param(
 
     [switch]$Wait,
 
-    [ValidatePattern('^(KB)?\d{6,8}$')]
+    [ValidatePattern('(?i)^(KB)?\d{6,8}$')]
     [string[]]$KBArticleID,
 
     [ValidatePattern('^https://')]
@@ -153,7 +154,19 @@ $exitCode = 0
 $servicesStopped = $false
 try {
     if ($Method -eq 'InstallationAssistant') {
+        $assistant = Join-Path ([IO.Path]::GetTempPath()) 'Windows11InstallationAssistant.exe'
+        $logger.Info("Downloading the Installation Assistant from $AssistantUrl")
+        Invoke-WebRequest -Uri $AssistantUrl -OutFile $assistant -UseBasicParsing
+        if (-not (Test-Path -LiteralPath $assistant) -or (Get-Item -LiteralPath $assistant).Length -eq 0) {
+            throw 'Download produced no file.'
+        }
+        $sig = Get-AuthenticodeSignature -FilePath $assistant
+        if (-not (Test-MicrosoftSignature -Signature $sig)) {
+            Remove-Item -LiteralPath $assistant -Force -ErrorAction SilentlyContinue
+            throw "Signature check failed for the downloaded Assistant (status: $($sig.Status)). Not launching it."
+        }
 
+        # Cleanup runs only after the download is verified, so a failed download leaves the machine as it was.
         $logger.Info('Clearing the Windows Update download cache.')
         $servicesStopped = $true
         Stop-Service -Name wuauserv, bits -Force
@@ -170,18 +183,6 @@ try {
                 $logger.Info("Removing stale staging folder $stale")
                 Remove-Item -LiteralPath $stale -Recurse -Force
             }
-        }
-
-        $assistant = Join-Path ([IO.Path]::GetTempPath()) 'Windows11InstallationAssistant.exe'
-        $logger.Info("Downloading the Installation Assistant from $AssistantUrl")
-        Invoke-WebRequest -Uri $AssistantUrl -OutFile $assistant -UseBasicParsing
-        if (-not (Test-Path -LiteralPath $assistant) -or (Get-Item -LiteralPath $assistant).Length -eq 0) {
-            throw 'Download produced no file.'
-        }
-        $sig = Get-AuthenticodeSignature -FilePath $assistant
-        if (-not (Test-MicrosoftSignature -Signature $sig)) {
-            Remove-Item -LiteralPath $assistant -Force -ErrorAction SilentlyContinue
-            throw "Signature check failed for the downloaded Assistant (status: $($sig.Status)). Not launching it."
         }
 
         $assistantArgs = Get-InstallationAssistantArguments -SkipCompatCheck:$SkipCompatCheck
