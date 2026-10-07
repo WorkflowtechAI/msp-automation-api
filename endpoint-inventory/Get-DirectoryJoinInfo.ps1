@@ -46,10 +46,12 @@ function Resolve-JoinType {
 function ConvertFrom-DsregStatus {
     <# Parse the text of `dsregcmd /status` into the two flags this script needs. #>
     param([string[]]$Text)
-    $state = [ordered]@{ AzureAdJoined = $false; DomainJoined = $false }
+    # Recognized is false when no expected line was seen (a non-English OS, a changed format), so the
+    # caller can say "could not read" instead of reporting "not joined".
+    $state = [ordered]@{ AzureAdJoined = $false; DomainJoined = $false; Recognized = $false }
     foreach ($line in $Text) {
-        if ($line -match '^\s*AzureAdJoined\s*:\s*(YES|NO)\s*$') { $state.AzureAdJoined = ($Matches[1] -eq 'YES') }
-        if ($line -match '^\s*DomainJoined\s*:\s*(YES|NO)\s*$')  { $state.DomainJoined  = ($Matches[1] -eq 'YES') }
+        if ($line -match '^\s*AzureAdJoined\s*:\s*(YES|NO)\s*$') { $state.AzureAdJoined = ($Matches[1] -eq 'YES'); $state.Recognized = $true }
+        if ($line -match '^\s*DomainJoined\s*:\s*(YES|NO)\s*$')  { $state.DomainJoined  = ($Matches[1] -eq 'YES'); $state.Recognized = $true }
     }
     [pscustomobject]$state
 }
@@ -81,21 +83,24 @@ function Get-JoinSummary {
 
 function Get-PrimaryDomainController {
     $name = $null; $source = $null
+    $errors = [System.Collections.Generic.List[string]]::new()
     if (Get-Command Get-ADDomain -ErrorAction SilentlyContinue) {
-        try { $name = (Get-ADDomain -ErrorAction Stop).PDCEmulator; $source = 'ActiveDirectory module' } catch { }
+        try { $name = (Get-ADDomain -ErrorAction Stop).PDCEmulator; $source = 'ActiveDirectory module' }
+        catch { $errors.Add("Get-ADDomain failed: $($_.Exception.Message)") }
     }
     if (-not $name) {
         try {
             $name   = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().PdcRoleOwner.Name
             $source = 'System.DirectoryServices'
-        } catch { }
+        } catch { $errors.Add("System.DirectoryServices PDC lookup failed: $($_.Exception.Message)") }
     }
-    [pscustomobject]@{ Name = $name; Source = $source }
+    [pscustomobject]@{ Name = $name; Source = $source; Errors = @($errors) }
 }
 
 function Get-AdSyncInfo {
     <# Looks on this machine and, when possible, in the directory. #>
     $detectedBy = [System.Collections.Generic.List[string]]::new()
+    $errors     = [System.Collections.Generic.List[string]]::new()
     $isLocal    = $false
     $server     = $null
 
@@ -120,13 +125,13 @@ function Get-AdSyncInfo {
                 $computer = Get-ADObject -Identity ($scp.ServerReferenceBL | Select-Object -First 1) -Properties DNSHostName -ErrorAction Stop
                 if ($computer.DNSHostName) { $server = [string]$computer.DNSHostName; $detectedBy.Add('directory service connection point') }
             }
-        } catch { }
+        } catch { $errors.Add("Directory search for the Azure AD Connect server failed: $($_.Exception.Message)") }
     }
 
     if (-not $server -and $isLocal) { $server = $env:COMPUTERNAME }
     if ($server -and -not $isLocal -and ($server.Split('.')[0] -ieq $env:COMPUTERNAME)) { $isLocal = $true }
 
-    [pscustomobject]@{ Server = $server; IsLocal = $isLocal; DetectedBy = @($detectedBy) }
+    [pscustomobject]@{ Server = $server; IsLocal = $isLocal; DetectedBy = @($detectedBy); Errors = @($errors) }
 }
 
 # Main. Functions above are defined without side effects so tests can load them alone.
@@ -136,6 +141,9 @@ $cs = Get-CimInstance -ClassName Win32_ComputerSystem
 $dsreg = $null
 try {
     $dsreg = ConvertFrom-DsregStatus -Text (dsregcmd /status)
+    if (-not $dsreg.Recognized) {
+        $notes.Add('dsregcmd /status returned no AzureAdJoined or DomainJoined line (non-English OS or changed format?); Azure AD join assumed absent.')
+    }
 } catch {
     $notes.Add("dsregcmd /status could not be read ($($_.Exception.Message)); Azure AD join assumed absent.")
 }
@@ -147,7 +155,9 @@ $sync = [pscustomobject]@{ Server = $null; IsLocal = $false; DetectedBy = @() }
 if ($joinType -in 'Hybrid', 'LocalAD') {
     $pdc  = Get-PrimaryDomainController
     if (-not $pdc.Name) { $notes.Add('PDC emulator could not be determined (no ActiveDirectory module and no domain reachable).') }
+    $pdc.Errors | ForEach-Object { $notes.Add($_) }
     $sync = Get-AdSyncInfo
+    $sync.Errors | ForEach-Object { $notes.Add($_) }
     if (-not (Get-Command Get-ADObject -ErrorAction SilentlyContinue)) {
         $notes.Add('ActiveDirectory module not installed: the directory was not searched for an Azure AD Connect server.')
     }

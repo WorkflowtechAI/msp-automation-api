@@ -75,8 +75,14 @@ function Invoke-Native {
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
 
-. (Join-Path $PSScriptRoot '..' 'framework' 'MSPLogger.ps1')
-$logger = Get-MSPLogger -LogName 'UpdateSysmon' -LogPath $LogPath -Level 'Info'
+try {
+    . (Join-Path $PSScriptRoot '..' 'framework' 'MSPLogger.ps1')
+    $logger = Get-MSPLogger -LogName 'UpdateSysmon' -LogPath $LogPath -Level 'Info'
+} catch {
+    # Write-Host, not Write-Error: with ErrorActionPreference Stop, Write-Error would throw past the exit.
+    Write-Host "[ERROR] Cannot start logging; framework/MSPLogger.ps1 must exist next to this script's folder: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
 $logger.StartOperation('Update Sysmon')
 
 if (-not $WhatIfPreference -and -not (Test-IsElevated)) {

@@ -92,10 +92,19 @@ Describe 'Get-DirectoryJoinInfo' {
         $state.DomainJoined  | Should -BeFalse
     }
 
-    It 'treats empty dsregcmd output as not joined' {
+    It 'treats empty dsregcmd output as not joined and flags it as unrecognised' {
         $state = ConvertFrom-DsregStatus -Text @()
         $state.AzureAdJoined | Should -BeFalse
         $state.DomainJoined  | Should -BeFalse
+        $state.Recognized    | Should -BeFalse
+    }
+
+    It 'flags output in another language as unrecognised' {
+        (ConvertFrom-DsregStatus -Text @('AzureAdJoined : OUI', 'Estado del dispositivo')).Recognized | Should -BeFalse
+    }
+
+    It 'flags parseable output as recognised' {
+        (ConvertFrom-DsregStatus -Text @('   AzureAdJoined : NO')).Recognized | Should -BeTrue
     }
 
     It 'summarises a hybrid machine with a remote sync server' {
@@ -239,6 +248,12 @@ Describe 'Invoke-Windows11Upgrade' {
         }
         It 'rejects a malformed target release' {
             { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion '2024' -LogPath $TestDrive -WhatIf } | Should -Throw
+        }
+        It 'rejects a malformed KB id' {
+            { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion 24H2 -KBArticleID 'not-a-kb' -LogPath $TestDrive -WhatIf } | Should -Throw
+        }
+        It 'accepts KB ids with or without the prefix' {
+            { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion 24H2 -KBArticleID 'KB5012345', '5012346' -LogPath $TestDrive -WhatIf } | Should -Not -Throw
         }
         It 'accepts a lower-case release' {
             { & $script:W11 -Method WindowsUpdate -TargetReleaseVersion '24h2' -LogPath $TestDrive -WhatIf } | Should -Not -Throw
@@ -610,4 +625,28 @@ Describe 'Enable-HybridRemoteMailbox' {
         }
     }
 
+}
+
+Describe 'Scripts copied away from framework/' {
+    # A script that cannot load MSPLogger must still honour the exit-code contract (1), not die with
+    # whatever the host does for an uncaught error.
+    It '<Name> exits 1 when framework/MSPLogger.ps1 is missing' -ForEach @(
+        @{ Name = 'Update-Sysmon';            Folder = 'maintenance';      Params = @{ WhatIf = $true } }
+        @{ Name = 'Invoke-Windows11Upgrade';  Folder = 'patch-management'; Params = @{ Method = 'InstallationAssistant'; WhatIf = $true } }
+        @{ Name = 'Restore-DeletedADUser';    Folder = 'user-management';  Params = @{ SamAccountName = 'jdoe'; TargetOU = 'OU=Staff,DC=contoso,DC=com'; WhatIf = $true } }
+        @{ Name = 'Set-UserPrimarySmtpAddress'; Folder = 'm365-azure';     Params = @{ Identity = 'jdoe'; NewPrimarySmtp = 'new@contoso.com'; WhatIf = $true } }
+        @{ Name = 'Enable-HybridRemoteMailbox'; Folder = 'm365-azure';     Params = @{ Identity = 'jdoe'; RoutingDomain = 'contoso.mail.onmicrosoft.com'; WhatIf = $true } }
+    ) {
+        $dir = Join-Path $TestDrive "isolated-$Name" 'scripts'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $script:Repo $Folder "$Name.ps1") -Destination $dir
+        $params = $Params.Clone()
+        $params.LogPath = $TestDrive
+        if ($Name -eq 'Update-Sysmon') {
+            $cfg = Join-Path $TestDrive 'iso-config.xml'
+            Set-Content -LiteralPath $cfg -Value '<Sysmon/>'
+            $params.ConfigPath = $cfg
+        }
+        (Invoke-ScriptFile -Path (Join-Path $dir "$Name.ps1") -Params $params).ExitCode | Should -Be 1
+    }
 }
