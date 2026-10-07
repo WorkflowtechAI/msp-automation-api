@@ -67,6 +67,23 @@ for reference. The API-shaped rewrite lives under `modules/` and covers a subset
 `Mail-Zapper.ps1` at the root is a standalone v1 utility, unrelated to the module
 framework.
 
+### Field-note scripts
+
+Standalone pwsh 7 scripts rebuilt from the author's field notes. Each takes its environment
+as parameters, supports `-WhatIf` where it changes anything, and exits 1 on failure. They
+are not part of the `modules/` API layer.
+
+| Script | What it does |
+|---|---|
+| `endpoint-inventory/Get-DirectoryJoinInfo.ps1` | Reports join type (workgroup, AD, Azure AD, hybrid), the PDC emulator, and any Azure AD Connect server, as an object. |
+| `maintenance/Update-Sysmon.ps1` | Replaces Sysmon with the latest Sysinternals build after an Authenticode check, and reinstalls it with a mandatory `-ConfigPath`. |
+| `patch-management/Invoke-Windows11Upgrade.ps1` | Windows 10 to 11 in-place upgrade via the Installation Assistant or PSWindowsUpdate. `-SkipCompatCheck` is opt-in and leaves the machine on unsupported hardware. |
+| `user-management/Restore-DeletedADUser.ps1` | Finds one deleted AD user by SamAccountName or display name and restores it to a given OU after confirmation. |
+| `m365-azure/Set-UserPrimarySmtpAddress.ps1` | Swaps the primary `SMTP:` entry in `proxyAddresses`, keeping the old address as an alias. Writes to on-prem AD; Graph is read-only verification. |
+| `m365-azure/Enable-HybridRemoteMailbox.ps1` | Wraps `Enable-RemoteMailbox` with a routing address built from `-RoutingDomain`, then reads the mailbox back. |
+
+Their tests are in `tests/FieldNoteScripts.Tests.ps1`.
+
 ## Quick start
 
 ### With Rewst
