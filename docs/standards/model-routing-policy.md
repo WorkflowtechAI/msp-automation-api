@@ -119,6 +119,20 @@ margin = max(0, intelligence - minIntelligence) + max(0, agentic - minAgentic)
 
 Headroom over the bar, per axis, summed.
 
+- **The axes are whatever the task is made of, and a published index is not
+  the only kind.** Intelligence, coding and agentic come from the catalog. A
+  lane whose task the catalog does not measure declares an axis the operator
+  measures instead: co-dm's prose lanes rank on a `writing` axis that is the
+  DM's own blind ranking of each model's scene from a fixed brief, stored
+  beside the catalog cache and merged onto it at load. On 2026-10-31 that
+  ranking came out close to the reverse of intelligence_index (two free
+  models first, the dearest frontier model eighth), which is the measurement
+  the published axes could not have made.
+- **An operator-measured axis is never filled in.** A published index a model
+  has not yet received may take the mean of its published siblings; a measured
+  axis the operator has not yet scored is 0 on every lane that weights it. The
+  axis exists to withhold a pass until the measurement is made.
+
 - **Measured against the BAR, not in absolute index points.** The floor encodes
   what the turn actually requires. Capability below it is worth nothing, because
   the model is excluded outright; only the surplus above it can help this turn.
