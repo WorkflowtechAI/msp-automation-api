@@ -356,6 +356,14 @@ In the order that would make this a real library:
 3. Bring schema coverage to one file per operation.
 4. Publish to the PowerShell Gallery with a real version number.
 
+## Related
+
+- [Autotask offline-coverage rule pack](https://github.com/WorkflowtechAI/EGI-Codex/tree/main/workflows/autotask-offline-coverage)
+  in EGI-Codex: native Autotask PSA workflow rules and notification templates that keep a
+  HelpDesk moving while the dispatcher is offline. Configuration only, no API calls; it
+  covers the PSA side that this library's operations do not. Under review in
+  [EGI-Codex PR 1](https://github.com/WorkflowtechAI/EGI-Codex/pull/1) until it merges.
+
 ---
 
 **Maintained by:** Eudai Gestalt Integrations (EGI)
